@@ -10,8 +10,8 @@ license = "Apache-2.0"
 
 [dependencies]
 libbpf-sys = { version = "0.0.6-4" }
-libc = "*"
-errno = "*"
+libc = "0.2"
+errno = "0.2"
 arraydeque = "0.4"
 crossbeam-channel = "0.4"
 rlimit = "0.3"
