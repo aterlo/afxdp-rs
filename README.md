@@ -25,6 +25,14 @@ If you have knowledge of Rust FFI and general Rust unsafe things I would greatly
 * ZEROCOPY: At present this module always passes the ZEROCOPY flag which only works with a small number of drivers.
 * Only the chunked memory mode is supported.
 
+## Notes
+
+* At present the build will fail using `cargo build`. To avoid this, checkout `libbpf-sys`, download the Git submodule for libbpf, edit the Makefile in `libbpf/src/`, add `-fPIC` to the `CFLAGS` and rebuild `libbpf-sys`. Then add the `path` parameter to `Cargo.toml` in this module to point to the `libbpf-sys` directory.
+
+```toml
+libbpf-sys = { version = "0.0.6-4", path = "/home/dan/projects/rust/libbpf-sys" }
+```
+
 ## To Do
 
 * Currently this module is not 'safe' because Bufs can outlive the memory pool they are associated with. I believe fixing this will require adding an Arc to each Buf. I have not had the time yet to determine the performance impact of this and would appreciate any other ideas.
