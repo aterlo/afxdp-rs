@@ -74,16 +74,16 @@ struct BufCustom {}
 #[derive(StructOpt, Debug)]
 #[structopt(name = "basic")]
 struct Opt {
-    #[structopt(short, long, default_value = "2048")]
+    #[structopt(long, default_value = "2048")]
     frame_size: usize,
 
-    #[structopt(short, long, default_value = "524288")]
+    #[structopt(long, default_value = "524288")]
     frame_num: usize,
 
     #[structopt(long, default_value = "none")]
     link_name: std::string::String,
 
-    #[structopt(short, long, default_value = "0")]
+    #[structopt(long, default_value = "0")]
     link_channel: usize,
 }
 
