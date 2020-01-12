@@ -9,8 +9,9 @@ use arraydeque::{ArrayDeque, Wrapping};
 use rlimit::{setrlimit, Resource, RLIM_INFINITY};
 use structopt::StructOpt;
 
-use afxdp_rs::{
-    Buf, MmapArea, MmapError, Socket, SocketRx, SocketTx, Umem, UmemCompletionQueue, UmemFillQueue,
+use afxdp::{
+    Buf, BufPool, MmapArea, MmapError, Socket, SocketRx, SocketTx, Umem, UmemCompletionQueue,
+    UmemFillQueue,
 };
 
 const BUF_NUM: usize = 524288;
@@ -91,8 +92,8 @@ fn main() {
 
     let r: Result<
         (
-            std::sync::Arc<afxdp_rs::MmapArea<BufCustom>>,
-            std::sync::Arc<std::sync::Mutex<afxdp_rs::BufPool<'_, BufCustom>>>,
+            std::sync::Arc<MmapArea<BufCustom>>,
+            std::sync::Arc<std::sync::Mutex<BufPool<'_, BufCustom>>>,
         ),
         MmapError,
     > = MmapArea::new(BUF_NUM, BUF_SIZE);

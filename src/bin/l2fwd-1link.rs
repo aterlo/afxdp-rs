@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
 
-use afxdp_rs::{
+use afxdp::{
     Buf, MmapArea, Socket, SocketRx, SocketTx, Umem, UmemCompletionQueue, UmemFillQueue,
     PENDING_LEN,
 };
