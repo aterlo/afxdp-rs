@@ -7,9 +7,12 @@ version = "0.1.0"
 authors = ["Dan Siemon <dan@aterlo.com>"]
 edition = "2018"
 license = "Apache-2.0"
+keywords = ["AF_XDP", "XDP"]
+categories = ["network-programming"]
+readme = "README.md"
 
 [dependencies]
-libbpf-sys = { version = "0.0.6-4" }
+libbpf-sys = { version = "0.0.6-5" }
 libc = "0.2"
 errno = "0.2"
 arraydeque = "0.4"
