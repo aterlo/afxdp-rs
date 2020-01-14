@@ -2,7 +2,7 @@
 // Simple example that received frames from one link, swaps the MAC addresses and sends the packets back out
 // the same link.
 //
-// The link and associated cannel are passed as command line args. The easiest way to direct all packets arriving
+// The link and associated channel are passed as command line args. The easiest way to direct all packets arriving
 // at a link to a single channel is with ethtool -X.
 //
 use arraydeque::{ArrayDeque, Wrapping};
