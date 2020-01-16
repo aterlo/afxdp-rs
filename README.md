@@ -46,7 +46,9 @@ Traffic Generator:
 
 Scenario 1: l2fwd-2link on a single core running userspace and NAPI
 
-Packet loss starts at about 6.5M PPS unidirectional and 6.0M PPS bi-directionally (3M each direction).
+Small amounts of packet loss starts at about 6.5M PPS unidirectional and 6.0M PPS bi-directionally (3M each direction).
+
+Little effort has been put into optimizing this so I expect there are some easy performance wins.
 
 ## AF_XDP Features
 
