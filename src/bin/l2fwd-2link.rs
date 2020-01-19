@@ -9,10 +9,12 @@ use arraydeque::{ArrayDeque, Wrapping};
 use rlimit::{setrlimit, Resource, RLIM_INFINITY};
 use structopt::StructOpt;
 
-use afxdp::{
-    Buf, BufPool, MmapArea, MmapError, Socket, SocketRx, SocketTx, Umem, UmemCompletionQueue,
-    UmemFillQueue,
-};
+use afxdp::buf::Buf;
+use afxdp::bufpool::BufPool;
+use afxdp::mmaparea::{MmapArea, MmapError};
+use afxdp::socket::{Socket, SocketRx, SocketTx};
+use afxdp::umem::{Umem, UmemCompletionQueue, UmemFillQueue};
+use afxdp::PENDING_LEN;
 
 const BUF_NUM: usize = 524288;
 const BUF_SIZE: usize = 2048;
@@ -21,8 +23,6 @@ const START_NUM: usize = BUF_NUM;
 const RING_SIZE: u32 = 4096;
 
 const SOCKET_BATCH_SIZE: usize = 1024;
-
-const PENDING_LEN: usize = 4096;
 
 const SERVICE_BATCH_SIZE: usize = 1024;
 const INITIAL_FILL_NUM: usize = 4096;

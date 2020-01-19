@@ -12,10 +12,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
 
-use afxdp::{
-    Buf, MmapArea, Socket, SocketRx, SocketTx, Umem, UmemCompletionQueue, UmemFillQueue,
-    PENDING_LEN,
-};
+use afxdp::buf::Buf;
+use afxdp::mmaparea::MmapArea;
+use afxdp::socket::{Socket, SocketRx, SocketTx};
+use afxdp::umem::{Umem, UmemCompletionQueue, UmemFillQueue};
+use afxdp::PENDING_LEN;
 
 const BUF_NUM: usize = 524288;
 const BUF_SIZE: usize = 2048;
