@@ -18,10 +18,6 @@ use afxdp::socket::{Socket, SocketRx, SocketTx};
 use afxdp::umem::{Umem, UmemCompletionQueue, UmemFillQueue};
 use afxdp::PENDING_LEN;
 
-const BUF_NUM: usize = 524288;
-const BUF_SIZE: usize = 2048;
-
-const START_NUM: usize = 4096;
 const RING_SIZE: u32 = 4096;
 const BATCH_SIZE: usize = 1024;
 const SERVICE_BATCH_SIZE: usize = 1024;
@@ -73,19 +69,22 @@ struct Stats {
 struct BufCustom {}
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "basic")]
+#[structopt(name = "l2fwd-1link")]
 struct Opt {
     #[structopt(long, default_value = "2048")]
-    frame_size: usize,
+    bufsize: usize,
 
-    #[structopt(long, default_value = "524288")]
-    frame_num: usize,
+    #[structopt(long, default_value = "4096")]
+    bufnum: usize,
 
     #[structopt(long, default_value = "none")]
     link_name: std::string::String,
 
     #[structopt(long, default_value = "0")]
     link_channel: usize,
+
+    #[structopt(long)]
+    hugetlb: bool,
 }
 
 fn main() {
@@ -98,8 +97,13 @@ fn main() {
 
     assert!(setrlimit(Resource::MEMLOCK, RLIM_INFINITY, RLIM_INFINITY).is_ok());
 
-    let options = MmapAreaOptions { huge_tlb: true };
-    let r = MmapArea::new(BUF_NUM, BUF_SIZE, options);
+    let options: MmapAreaOptions;
+    if opt.hugetlb {
+        options = MmapAreaOptions { huge_tlb: true };
+    } else {
+        options = MmapAreaOptions { huge_tlb: false };
+    }
+    let r = MmapArea::new(opt.bufnum, opt.bufsize, options);
     let (area, buf_pool) = match r {
         Ok((area, buf_pool)) => (area, buf_pool),
         Err(err) => panic!("no mmap for you: {:?}", err),
@@ -123,22 +127,23 @@ fn main() {
         Err(err) => panic!("no socket for you: {:?}", err),
     };
 
-    // Create a local buf pool and get bufs from the global pool
-    let mut bufs: Vec<Buf<BufCustom>> = Vec::with_capacity(START_NUM);
-    let r = buf_pool.lock().unwrap().get(&mut bufs, START_NUM);
+    // Create a local buf pool and get bufs from the global pool. Since there are no other users of the pool, grab
+    // all the bufs.
+    let mut bufs: Vec<Buf<BufCustom>> = Vec::with_capacity(opt.bufnum);
+    let r = buf_pool.lock().unwrap().get(&mut bufs, opt.bufnum);
     match r {
         Ok(n) => {
-            if n != START_NUM {
-                panic!("failed to get initial bufs {} {}", n, START_NUM,);
+            if n != opt.bufnum {
+                panic!("failed to get initial bufs {} {}", n, opt.bufnum,);
             }
         }
         Err(err) => panic!("error: {:?}", err),
     }
 
-    let r = umem1fq.fill(&mut bufs, START_NUM);
+    let r = umem1fq.fill(&mut bufs, opt.bufnum);
     match r {
         Ok(n) => {
-            if n != START_NUM {
+            if n != opt.bufnum {
                 panic!("fill incomplete");
             }
         }
