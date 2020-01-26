@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use structopt::StructOpt;
 
 use afxdp::buf::Buf;
-use afxdp::mmaparea::MmapArea;
+use afxdp::mmaparea::{MmapArea, MmapAreaOptions};
 use afxdp::socket::{Socket, SocketRx, SocketTx};
 use afxdp::umem::{Umem, UmemCompletionQueue, UmemFillQueue};
 use afxdp::PENDING_LEN;
@@ -98,7 +98,8 @@ fn main() {
 
     assert!(setrlimit(Resource::MEMLOCK, RLIM_INFINITY, RLIM_INFINITY).is_ok());
 
-    let r = MmapArea::new(BUF_NUM, BUF_SIZE);
+    let options = MmapAreaOptions { huge_tlb: true };
+    let r = MmapArea::new(BUF_NUM, BUF_SIZE, options);
     let (area, buf_pool) = match r {
         Ok((area, buf_pool)) => (area, buf_pool),
         Err(err) => panic!("no mmap for you: {:?}", err),

@@ -29,7 +29,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> BufPool<'a, T> {
         for i in 0..buf_num {
             let buf: Buf<T>;
             unsafe {
-                let ptr = area.ptr.offset(i as isize);
+                let ptr = area.ptr.offset((i * buf_len) as isize);
                 buf = Buf::<T> {
                     addr: i as u64,
                     len: buf_len as u32,

@@ -11,7 +11,7 @@ use structopt::StructOpt;
 
 use afxdp::buf::Buf;
 use afxdp::bufpool::BufPool;
-use afxdp::mmaparea::{MmapArea, MmapError};
+use afxdp::mmaparea::{MmapArea, MmapAreaOptions, MmapError};
 use afxdp::socket::{Socket, SocketRx, SocketTx};
 use afxdp::umem::{Umem, UmemCompletionQueue, UmemFillQueue};
 use afxdp::PENDING_LEN;
@@ -90,13 +90,14 @@ fn main() {
 
     assert!(setrlimit(Resource::MEMLOCK, RLIM_INFINITY, RLIM_INFINITY).is_ok());
 
+    let options = MmapAreaOptions { huge_tlb: true };
     let r: Result<
         (
             std::sync::Arc<MmapArea<BufCustom>>,
             std::sync::Arc<std::sync::Mutex<BufPool<'_, BufCustom>>>,
         ),
         MmapError,
-    > = MmapArea::new(BUF_NUM, BUF_SIZE);
+    > = MmapArea::new(BUF_NUM, BUF_SIZE, options);
     let (area, buf_pool) = match r {
         Ok((area, buf_pool)) => (area, buf_pool),
         Err(err) => panic!("Failed to create MmapArea: {:?}", err),
