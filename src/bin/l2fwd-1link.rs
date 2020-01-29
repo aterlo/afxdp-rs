@@ -8,6 +8,7 @@
 use arraydeque::{ArrayDeque, Wrapping};
 use crossbeam_channel::{bounded, select, Receiver, Sender};
 use rlimit::{setrlimit, Resource, RLIM_INFINITY};
+use std::cmp::min;
 use std::thread;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
@@ -140,11 +141,11 @@ fn main() {
         Err(err) => panic!("error: {:?}", err),
     }
 
-    let r = umem1fq.fill(&mut bufs, opt.bufnum);
+    let r = umem1fq.fill(&mut bufs, min(RING_SIZE as usize, opt.bufnum));
     match r {
         Ok(n) => {
             if n != opt.bufnum {
-                panic!("fill incomplete");
+                panic!("Initial fill of umem incomplete");
             }
         }
         Err(err) => panic!("error: {:?}", err),

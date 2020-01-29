@@ -7,6 +7,7 @@
 //
 use arraydeque::{ArrayDeque, Wrapping};
 use rlimit::{setrlimit, Resource, RLIM_INFINITY};
+use std::cmp::min;
 use structopt::StructOpt;
 
 use afxdp::buf::Buf;
@@ -84,7 +85,7 @@ fn main() {
         return;
     }
 
-    let initial_fill_num = opt.bufnum / 2;
+    let initial_fill_num = min(opt.bufnum / 2, RING_SIZE as usize);
 
     assert!(setrlimit(Resource::MEMLOCK, RLIM_INFINITY, RLIM_INFINITY).is_ok());
 
@@ -160,7 +161,10 @@ fn main() {
     match r {
         Ok(n) => {
             if n != initial_fill_num {
-                panic!("Initial fill incomplete")
+                panic!(
+                    "Initial fill of umem1 incomplete: {} of {}",
+                    n, initial_fill_num
+                );
             }
         }
         Err(err) => println!("error: {:?}", err),
@@ -173,7 +177,10 @@ fn main() {
     match r {
         Ok(n) => {
             if n != initial_fill_num {
-                panic!("fill incomplete")
+                panic!(
+                    "Initial fill of umem2 incomplete: {} of {}",
+                    n, initial_fill_num
+                );
             }
         }
         Err(err) => println!("error: {:?}", err),
