@@ -249,6 +249,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
         }
     }
 
+    #[inline]
     pub fn try_recv(
         &mut self,
         bufs: &mut ArrayDeque<[Buf<T>; PENDING_LEN], Wrapping>,
@@ -308,6 +309,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Drop for SocketRx<'a, T> 
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
+    #[inline]
     pub fn try_send(
         &mut self,
         bufs: &mut ArrayDeque<[Buf<T>; PENDING_LEN], Wrapping>,

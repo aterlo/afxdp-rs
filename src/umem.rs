@@ -116,6 +116,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Drop for Umem<'a, T> {
 impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T> {
     /// After packets have been transmitted, the buffer is returned via the completion queue. The service
     /// method processed the completion queue.
+    #[inline]
     pub fn service(
         &mut self,
         bufs: &mut Vec<Buf<T>>,
@@ -169,6 +170,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Drop for UmemCompletionQu
 impl<'a, T: std::default::Default + std::marker::Copy> UmemFillQueue<'a, T> {
     /// In order to receive packets, the link needs buffers to write the packets to. These buffers are sent from
     /// userspace to the kernel via the fill queue.
+    #[inline]
     pub fn fill(
         &mut self,
         bufs: &mut Vec<Buf<T>>,
