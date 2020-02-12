@@ -11,7 +11,7 @@ use libbpf_sys::{
     XDP_FLAGS_UPDATE_IF_NOEXIST, XDP_USE_NEED_WAKEUP, XDP_ZEROCOPY,
     XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD,
 };
-use libc::{poll, pollfd, sendto, EAGAIN, EBUSY, ENOBUFS, MSG_DONTWAIT, POLLIN, POLLOUT};
+use libc::{poll, pollfd, sendto, EAGAIN, EBUSY, ENETDOWN, ENOBUFS, MSG_DONTWAIT, POLLIN, POLLOUT};
 use std::sync::Arc;
 
 use crate::buf::Buf;
@@ -367,7 +367,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
                     // otherwise. Copying that behavior for now.
                     let errno = errno().0;
                     match errno {
-                        ENOBUFS | EAGAIN | EBUSY => {}
+                        ENOBUFS | EAGAIN | EBUSY | ENETDOWN => {}
                         _ => panic!("xdpsock_user.c sample panics here"),
                     }
                 }
