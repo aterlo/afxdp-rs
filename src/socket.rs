@@ -7,7 +7,7 @@ use libbpf_sys::{
     _xsk_ring_cons__peek, _xsk_ring_cons__release, _xsk_ring_cons__rx_desc,
     _xsk_ring_prod__needs_wakeup, _xsk_ring_prod__reserve, _xsk_ring_prod__submit,
     _xsk_ring_prod__tx_desc, xdp_desc, xsk_ring_cons, xsk_ring_prod, xsk_socket,
-    xsk_socket__create, xsk_socket__delete, xsk_socket__fd, xsk_socket_config,
+    xsk_socket__create, xsk_socket__delete, xsk_socket__fd, xsk_socket_config, XDP_COPY,
     XDP_FLAGS_UPDATE_IF_NOEXIST, XDP_USE_NEED_WAKEUP, XDP_ZEROCOPY,
     XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD,
 };
@@ -50,6 +50,16 @@ pub enum SocketError {
     Failed,
 }
 
+/// Configuration options for Socket
+#[derive(Copy, Clone, Debug, Default)]
+pub struct SocketOptions {
+    /// Force XDP zero copy mode (XDP_ZEROCOPY flag)
+    pub zero_copy_mode: bool,
+
+    /// Force XDP copy mode (XDP_COPY flag)
+    pub copy_mode: bool,
+}
+
 impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
     // Create a new Rx/Tx AF_XDP socket
     pub fn new(
@@ -58,14 +68,23 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         queue: usize,
         rx_ring_size: u32,
         tx_ring_size: u32,
+        options: SocketOptions,
     ) -> Result<(Arc<Socket<'a, T>>, SocketRx<'a, T>, SocketTx<'a, T>), SocketError> {
-        let cfg = xsk_socket_config {
+        let mut cfg = xsk_socket_config {
             rx_size: rx_ring_size,
             tx_size: tx_ring_size,
             xdp_flags: XDP_FLAGS_UPDATE_IF_NOEXIST,
-            bind_flags: XDP_USE_NEED_WAKEUP as u16 | XDP_ZEROCOPY as u16,
+            bind_flags: XDP_USE_NEED_WAKEUP as u16,
             libbpf_flags: 0,
         };
+
+        if options.zero_copy_mode {
+            cfg.bind_flags = cfg.bind_flags | XDP_ZEROCOPY as u16;
+        }
+
+        if options.copy_mode {
+            cfg.bind_flags = cfg.bind_flags | XDP_COPY as u16;
+        }
 
         // Heap allocate since they are passed to the C function
         let mut rx: Box<xsk_ring_cons> = Default::default();
@@ -119,14 +138,23 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         if_name: &str,
         queue: usize,
         rx_ring_size: u32,
+        options: SocketOptions,
     ) -> Result<(Arc<Socket<'a, T>>, SocketRx<'a, T>), SocketError> {
-        let cfg = xsk_socket_config {
+        let mut cfg = xsk_socket_config {
             rx_size: rx_ring_size,
             tx_size: 0,
             xdp_flags: XDP_FLAGS_UPDATE_IF_NOEXIST,
-            bind_flags: XDP_USE_NEED_WAKEUP as u16 | XDP_ZEROCOPY as u16,
+            bind_flags: XDP_USE_NEED_WAKEUP as u16,
             libbpf_flags: 0,
         };
+
+        if options.zero_copy_mode {
+            cfg.bind_flags = cfg.bind_flags | XDP_ZEROCOPY as u16;
+        }
+
+        if options.copy_mode {
+            cfg.bind_flags = cfg.bind_flags | XDP_COPY as u16;
+        }
 
         // Heap allocate since they are passed to the C function
         let mut rx: Box<xsk_ring_cons> = Default::default();
@@ -174,14 +202,23 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         if_name: &str,
         queue: usize,
         tx_ring_size: u32,
+        options: SocketOptions,
     ) -> Result<(Arc<Socket<'a, T>>, SocketTx<'a, T>), SocketError> {
-        let cfg = xsk_socket_config {
+        let mut cfg = xsk_socket_config {
             rx_size: 0,
             tx_size: tx_ring_size,
             xdp_flags: XDP_FLAGS_UPDATE_IF_NOEXIST,
-            bind_flags: XDP_USE_NEED_WAKEUP as u16 | XDP_ZEROCOPY as u16,
+            bind_flags: XDP_USE_NEED_WAKEUP as u16,
             libbpf_flags: XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD,
         };
+
+        if options.zero_copy_mode {
+            cfg.bind_flags = cfg.bind_flags | XDP_ZEROCOPY as u16;
+        }
+
+        if options.copy_mode {
+            cfg.bind_flags = cfg.bind_flags | XDP_COPY as u16;
+        }
 
         // Heap allocate since they are passed to the C function
         let mut tx: Box<xsk_ring_prod> = Default::default();

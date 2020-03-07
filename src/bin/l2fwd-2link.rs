@@ -13,7 +13,7 @@ use structopt::StructOpt;
 use afxdp::buf::Buf;
 use afxdp::bufpool::BufPool;
 use afxdp::mmaparea::{MmapArea, MmapAreaOptions, MmapError};
-use afxdp::socket::{Socket, SocketRx, SocketTx};
+use afxdp::socket::{Socket, SocketOptions, SocketRx, SocketTx};
 use afxdp::umem::{Umem, UmemCompletionQueue, UmemFillQueue};
 use afxdp::PENDING_LEN;
 
@@ -74,7 +74,13 @@ struct Opt {
     link2_channel: usize,
 
     #[structopt(long)]
-    hugetlb: bool,
+    huge_tlb: bool,
+
+    #[structopt(long)]
+    zero_copy: bool,
+
+    #[structopt(long)]
+    copy: bool,
 }
 
 fn main() {
@@ -90,7 +96,7 @@ fn main() {
     assert!(setrlimit(Resource::MEMLOCK, RLIM_INFINITY, RLIM_INFINITY).is_ok());
 
     let options: MmapAreaOptions;
-    if opt.hugetlb {
+    if opt.huge_tlb {
         options = MmapAreaOptions { huge_tlb: true };
     } else {
         options = MmapAreaOptions { huge_tlb: false };
@@ -119,12 +125,17 @@ fn main() {
         Err(err) => panic!("Failed to create Umem: {:?}", err),
     };
 
+    let mut options = SocketOptions::default();
+    options.zero_copy_mode = opt.zero_copy;
+    options.copy_mode = opt.copy;
+
     let r = Socket::new(
         umem1.clone(),
         &opt.link1_name,
         opt.link1_channel,
         RING_SIZE,
         RING_SIZE,
+        options,
     );
     let (_skt1, skt1rx, skt1tx) = match r {
         Ok(skt) => skt,
@@ -137,6 +148,7 @@ fn main() {
         opt.link2_channel,
         RING_SIZE,
         RING_SIZE,
+        options,
     );
     let (_skt2, skt2rx, skt2tx) = match r {
         Ok(skt) => skt,

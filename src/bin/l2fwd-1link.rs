@@ -15,25 +15,19 @@ use structopt::StructOpt;
 
 use afxdp::buf::Buf;
 use afxdp::mmaparea::{MmapArea, MmapAreaOptions};
-use afxdp::socket::{Socket, SocketRx, SocketTx};
+use afxdp::socket::{Socket, SocketOptions, SocketRx, SocketTx};
 use afxdp::umem::{Umem, UmemCompletionQueue, UmemFillQueue};
 use afxdp::PENDING_LEN;
-
-const RING_SIZE: u32 = 4096;
-const BATCH_SIZE: usize = 1024;
-const SERVICE_BATCH_SIZE: usize = 1024;
-const FILL_THRESHOLD: usize = 512;
+use libbpf_sys::{XSK_RING_CONS__DEFAULT_NUM_DESCS, XSK_RING_PROD__DEFAULT_NUM_DESCS};
 
 fn swap_macs(bufs: &mut ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping>) -> Result<(), ()> {
-    let mut tmp1: [u8; 6] = Default::default();
-    let mut tmp2: [u8; 6] = Default::default();
+    let mut tmp1: [u8; 12] = Default::default();
 
     for buf in bufs {
-        tmp1.copy_from_slice(&buf.data[0..6]);
-        tmp2.copy_from_slice(&buf.data[6..12]);
+        tmp1.copy_from_slice(&buf.data[0..12]);
 
-        buf.data[0..6].copy_from_slice(&tmp2);
-        buf.data[6..12].copy_from_slice(&tmp1);
+        buf.data[0..6].copy_from_slice(&tmp1[6..12]);
+        buf.data[6..12].copy_from_slice(&tmp1[0..6]);
     }
 
     Ok(())
@@ -42,8 +36,9 @@ fn swap_macs(bufs: &mut ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping>) -> 
 fn forward(
     tx: &mut SocketTx<BufCustom>,
     bufs: &mut ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping>,
+    batch_size: usize,
 ) -> Result<usize, ()> {
-    let r = tx.try_send(bufs, BATCH_SIZE);
+    let r = tx.try_send(bufs, batch_size);
     match r {
         Ok(n) => Ok(n),
         Err(_) => panic!("shouldn't happen"),
@@ -72,11 +67,14 @@ struct BufCustom {}
 #[derive(StructOpt, Debug)]
 #[structopt(name = "l2fwd-1link")]
 struct Opt {
-    #[structopt(long, default_value = "2048")]
+    #[structopt(long, default_value = "4096")]
     bufsize: usize,
 
     #[structopt(long, default_value = "4096")]
     bufnum: usize,
+
+    #[structopt(long, default_value = "64")]
+    batch_size: usize,
 
     #[structopt(long, default_value = "none")]
     link_name: std::string::String,
@@ -85,7 +83,13 @@ struct Opt {
     link_channel: usize,
 
     #[structopt(long)]
-    hugetlb: bool,
+    huge_tlb: bool,
+
+    #[structopt(long)]
+    zero_copy: bool,
+
+    #[structopt(long)]
+    copy: bool,
 }
 
 fn main() {
@@ -99,7 +103,7 @@ fn main() {
     assert!(setrlimit(Resource::MEMLOCK, RLIM_INFINITY, RLIM_INFINITY).is_ok());
 
     let options: MmapAreaOptions;
-    if opt.hugetlb {
+    if opt.huge_tlb {
         options = MmapAreaOptions { huge_tlb: true };
     } else {
         options = MmapAreaOptions { huge_tlb: false };
@@ -110,18 +114,27 @@ fn main() {
         Err(err) => panic!("no mmap for you: {:?}", err),
     };
 
-    let r = Umem::new(area.clone(), RING_SIZE, RING_SIZE);
+    let r = Umem::new(
+        area.clone(),
+        XSK_RING_CONS__DEFAULT_NUM_DESCS,
+        XSK_RING_PROD__DEFAULT_NUM_DESCS,
+    );
     let (umem1, umem1cq, mut umem1fq) = match r {
         Ok(umem) => umem,
         Err(err) => panic!("no umem for you: {:?}", err),
     };
 
+    let mut options = SocketOptions::default();
+    options.zero_copy_mode = opt.zero_copy;
+    options.copy_mode = opt.copy;
+
     let r = Socket::new(
         umem1.clone(),
         &opt.link_name,
         opt.link_channel,
-        RING_SIZE,
-        RING_SIZE,
+        XSK_RING_CONS__DEFAULT_NUM_DESCS,
+        XSK_RING_PROD__DEFAULT_NUM_DESCS,
+        options,
     );
     let (_skt1, skt1rx, skt1tx) = match r {
         Ok(skt) => skt,
@@ -141,11 +154,17 @@ fn main() {
         Err(err) => panic!("error: {:?}", err),
     }
 
-    let r = umem1fq.fill(&mut bufs, min(RING_SIZE as usize, opt.bufnum));
+    let r = umem1fq.fill(
+        &mut bufs,
+        min(XSK_RING_PROD__DEFAULT_NUM_DESCS as usize, opt.bufnum),
+    );
     match r {
         Ok(n) => {
-            if n != opt.bufnum {
-                panic!("Initial fill of umem incomplete");
+            if n != min(XSK_RING_PROD__DEFAULT_NUM_DESCS as usize, opt.bufnum) {
+                panic!(
+                    "Initial fill of umem incomplete. Wanted {} got {}.",
+                    opt.bufnum, n
+                );
             }
         }
         Err(err) => panic!("error: {:?}", err),
@@ -198,7 +217,7 @@ fn main() {
                 }
             }
 
-            if ticks > 60 {
+            if ticks > 300 {
                 break;
             }
 
@@ -210,7 +229,7 @@ fn main() {
         //
         // Service completion queue
         //
-        let r = state.cq.service(&mut bufs, SERVICE_BATCH_SIZE);
+        let r = state.cq.service(&mut bufs, opt.batch_size);
         match r {
             Ok(n) => {
                 stats.cq_bufs += n;
@@ -221,7 +240,7 @@ fn main() {
         //
         // Receive
         //
-        let r = state.rx.try_recv(&mut v, BATCH_SIZE, custom);
+        let r = state.rx.try_recv(&mut v, opt.batch_size, custom);
         match r {
             Ok(n) => {
                 if n > 0 {
@@ -233,7 +252,7 @@ fn main() {
                         Err(_) => println!("error"),
                     }
 
-                    let r = forward(&mut state.tx, &mut v);
+                    let r = forward(&mut state.tx, &mut v, opt.batch_size);
                     match r {
                         Ok(n) => stats.tx_packets += n,
                         Err(err) => println!("error: {:?}", err),
@@ -254,7 +273,7 @@ fn main() {
         //
         // Fill buffers if required
         //
-        if state.fq_deficit > FILL_THRESHOLD {
+        if state.fq_deficit > 0 {
             let r = state.fq.fill(&mut bufs, state.fq_deficit);
             match r {
                 Ok(n) => {
