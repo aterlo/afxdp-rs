@@ -213,6 +213,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemFillQueue<'a, T> {
         Ok(ready)
     }
 
+    #[inline]
     pub fn needs_wakeup(&mut self) -> bool {
         unsafe {
             if _xsk_ring_prod__needs_wakeup(self.fq.as_mut()) != 0 {

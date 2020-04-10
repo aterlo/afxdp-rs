@@ -270,6 +270,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Drop for Socket<'a, T> {
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
+    #[inline]
     pub fn wake(&mut self) {
         // This is inefficient, we should either store the fds or maybe even better yet signal out
         // so that the caller can call poll once for many fds.

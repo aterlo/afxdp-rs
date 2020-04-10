@@ -49,6 +49,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> BufPool<'a, T> {
         Ok(Arc::new(Mutex::new(bp)))
     }
 
+    #[inline]
     pub fn get(&mut self, bufs: &mut Vec<Buf<'a, T>>, num: usize) -> Result<usize, BufPoolError> {
         let ready = min(num, self.bufs.len());
 
@@ -66,6 +67,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> BufPool<'a, T> {
         Ok(ready)
     }
 
+    #[inline]
     pub fn put(&mut self, bufs: &mut Vec<Buf<'a, T>>, num: usize) -> Result<usize, BufPoolError> {
         let ready = min(num, bufs.len());
 
