@@ -2,6 +2,10 @@
 
 This module provides a Rust interface for AF_XDP built on libbpf-sys (https://github.com/alexforster/libbpf-sys).
 
+**Author:** Dan Siemon <dan@coverfire.com>
+
+[![docs.rs](https://docs.rs/afxdp/badge.svg)](https://docs.rs/crate/afxdp)
+
 AF_XDP:
 
 * <https://www.kernel.org/doc/html/latest/networking/af_xdp.html>
@@ -15,7 +19,7 @@ The goals of this crate, in order, are:
 
 ## Current Status
 
-The API works for my current use cases but I expect it will change to achieve higher performance and usability.
+The API works for my current use cases but I expect it will change to achieve higher performance and better usability.
 
 If you have knowledge of Rust FFI and general Rust unsafe things I would greatly appreciate some help auditing this crate as my experience in this area is limited.
 
@@ -52,8 +56,8 @@ Little effort has been put into optimizing this so I expect there are some easy 
 
 ## AF_XDP Features
 
-* HUGE TLB: At present this crate always uses HUGETLB to map the memory. This may require the hugepages kernel boot argument (above) making it harder for others to play.
-* ZEROCOPY: At present this crate always passes the ZEROCOPY flag which only works with a small number of drivers
+* HUGE TLB flag: Optional (command line arg in the sample programs)
+* ZEROCOPY flag: Optional (command line arg in the sample programs)
 * Only the chunked memory mode is supported
 * Need wakeup flag is required which implies Linux >= 5.4
 
