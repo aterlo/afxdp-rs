@@ -2,7 +2,7 @@
 
 This module provides a Rust interface for AF_XDP built on libbpf-sys (https://github.com/alexforster/libbpf-sys).
 
-**Author:** Dan Siemon <dan@coverfire.com>
+**Author:** Dan Siemon \<dan@coverfire.com\>
 
 [![docs.rs](https://docs.rs/afxdp/badge.svg)](https://docs.rs/crate/afxdp)
 
