@@ -298,7 +298,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
         batch_size = min(bufs.capacity() - bufs.len(), batch_size);
 
         unsafe {
-            rcvd = _xsk_ring_cons__peek(self.rx.as_mut(), batch_size, &mut idx_rx);
+            rcvd = _xsk_ring_cons__peek(self.rx.as_mut(), batch_size as u64, &mut idx_rx) as usize;
         }
         if rcvd == 0 {
             // Note that the caller needs to check if the queue needs to be woken up
@@ -334,7 +334,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
         }
 
         unsafe {
-            _xsk_ring_cons__release(self.rx.as_mut(), rcvd);
+            _xsk_ring_cons__release(self.rx.as_mut(), rcvd as u64);
         }
 
         Ok(rcvd)
@@ -358,7 +358,8 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
         batch_size = min(bufs.len(), batch_size);
 
         unsafe {
-            ready = _xsk_ring_prod__reserve(self.tx.as_mut(), batch_size, &mut idx_tx);
+            ready =
+                _xsk_ring_prod__reserve(self.tx.as_mut(), batch_size as u64, &mut idx_tx) as usize;
         }
 
         for _ in 0..ready {
@@ -377,7 +378,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
 
         if ready > 0 {
             unsafe {
-                _xsk_ring_prod__submit(self.tx.as_mut(), ready);
+                _xsk_ring_prod__submit(self.tx.as_mut(), ready as u64);
             }
         }
 

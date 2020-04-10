@@ -127,7 +127,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T
         let batch_size = min(bufs.capacity() - bufs.len(), batch_size);
 
         unsafe {
-            ready = _xsk_ring_cons__peek(self.cq.as_mut(), batch_size, &mut idx);
+            ready = _xsk_ring_cons__peek(self.cq.as_mut(), batch_size as u64, &mut idx) as usize;
         }
         if ready == 0 {
             return Ok(0);
@@ -156,7 +156,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T
         }
 
         unsafe {
-            _xsk_ring_cons__release(self.cq.as_mut(), ready);
+            _xsk_ring_cons__release(self.cq.as_mut(), ready as u64);
         }
 
         Ok(ready)
@@ -182,7 +182,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemFillQueue<'a, T> {
         batch_size = min(bufs.len(), batch_size);
 
         unsafe {
-            ready = _xsk_ring_prod__reserve(self.fq.as_mut(), batch_size, &mut idx);
+            ready = _xsk_ring_prod__reserve(self.fq.as_mut(), batch_size as u64, &mut idx) as usize;
         }
 
         if ready > 0 {
@@ -207,7 +207,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemFillQueue<'a, T> {
         }
 
         unsafe {
-            _xsk_ring_prod__submit(self.fq.as_mut(), ready);
+            _xsk_ring_prod__submit(self.fq.as_mut(), ready as u64);
         }
 
         Ok(ready)

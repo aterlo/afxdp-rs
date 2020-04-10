@@ -7,7 +7,7 @@ use crate::mmaparea::MmapArea;
 /// BufPool stores Bufs. It can be used in a single thread or wrapped in a Mutex to provide a buffer pool to multiple
 /// threads.
 pub struct BufPool<'a, T: std::default::Default + std::marker::Copy> {
-    area: Arc<MmapArea<'a, T>>,
+    _area: Arc<MmapArea<'a, T>>,
     bufs: Vec<Buf<'a, T>>,
 }
 
@@ -42,7 +42,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> BufPool<'a, T> {
         }
 
         let bp = BufPool {
-            area: area,
+            _area: area,
             bufs: bufs,
         };
 
