@@ -20,3 +20,10 @@ arraydeque = "0.4"
 crossbeam-channel = "0.4"
 rlimit = "0.3"
 structopt = "0.3"
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "bufpool"
+harness = false
