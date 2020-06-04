@@ -38,6 +38,10 @@ fn forward(
     bufs: &mut ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping>,
     batch_size: usize,
 ) -> Result<usize, ()> {
+    if bufs.is_empty() {
+        return Ok(0);
+    }
+
     let r = tx.try_send(bufs, batch_size);
     match r {
         Ok(n) => Ok(n),
@@ -252,12 +256,6 @@ fn main() {
                         Err(_) => println!("error"),
                     }
 
-                    let r = forward(&mut state.tx, &mut v, opt.batch_size);
-                    match r {
-                        Ok(n) => stats.tx_packets += n,
-                        Err(err) => println!("error: {:?}", err),
-                    }
-
                     state.fq_deficit += n;
                 } else {
                     if state.fq.needs_wakeup() {
@@ -268,6 +266,15 @@ fn main() {
             Err(err) => {
                 panic!("error: {:?}", err);
             }
+        }
+
+        //
+        // Forward
+        //
+        let r = forward(&mut state.tx, &mut v, opt.batch_size);
+        match r {
+            Ok(n) => stats.tx_packets += n,
+            Err(err) => println!("error: {:?}", err),
         }
 
         //
