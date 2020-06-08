@@ -26,6 +26,10 @@ fn forward(
     tx: &mut SocketTx<BufCustom>,
     bufs: &mut ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping>,
 ) -> Result<usize, ()> {
+    if bufs.is_empty() {
+        return Ok(0);
+    }
+
     let r = tx.try_send(bufs, SOCKET_BATCH_SIZE);
     match r {
         Ok(n) => Ok(n),
@@ -251,12 +255,6 @@ fn main() {
                 if n > 0 {
                     stats[pos].rx_packets += n;
 
-                    let r = forward(&mut state[other].tx, &mut pending[pos]);
-                    match r {
-                        Ok(n) => stats[pos].tx_packets += n,
-                        Err(err) => println!("error: {:?}", err),
-                    }
-
                     state[pos].fq_deficit += n;
                 } else {
                     if state[pos].fq.needs_wakeup() {
@@ -267,6 +265,15 @@ fn main() {
             Err(err) => {
                 panic!("error: {:?}", err);
             }
+        }
+
+        //
+        // Forward packets
+        //
+        let r = forward(&mut state[other].tx, &mut pending[pos]);
+        match r {
+            Ok(n) => stats[pos].tx_packets += n,
+            Err(err) => println!("error: {:?}", err),
         }
 
         //
