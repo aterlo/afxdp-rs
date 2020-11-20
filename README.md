@@ -25,11 +25,16 @@ If you have knowledge of Rust FFI and general Rust unsafe things I would greatly
 
 ## Sample Programs
 
-There are two sample programs in src/bin/:
+There are two sample programs in `examples/`:
 
-l2fwd-1link: Receives frames on a single link/queue, swaps the MAC and writes back to the same link/queue. This is roughly like the kernel xdpsock_user.c sample program in l2fwd mode.
+* `l2fwd-1link`: Receives frames on a single link/queue, swaps the MAC and
+  writes back to the same link/queue. This is roughly like the kernel
+  xdpsock_user.c sample program in l2fwd mode.
+* `l2fwd-2link`: Receives frames from two link/queue pairs (separate devices)
+  and forwards the frames to the opposite link.
 
-l2fwd-2link: Receives frames from two link/queue pairs (separate devices) and forwards the frames to the opposite link.
+You can run with `cargo run --release --example <example_name> -- [example options]` to
+see a list of options run `cargo run --release --example <example_name> -- --help`
 
 ## Performance
 

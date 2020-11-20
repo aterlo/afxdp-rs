@@ -17,12 +17,12 @@ libbpf-sys = { version = "0.0.7-1" }
 libc = "0.2"
 errno = "0.2"
 arraydeque = "0.4"
-crossbeam-channel = "0.4"
-rlimit = "0.3"
-structopt = "0.3"
 
 [dev-dependencies]
 criterion = "0.3"
+structopt = "0.3"
+rlimit = "0.3"
+crossbeam-channel = "0.4"
 
 [[bench]]
 name = "bufpool"

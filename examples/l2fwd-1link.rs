@@ -71,38 +71,41 @@ struct BufCustom {}
 #[derive(StructOpt, Debug)]
 #[structopt(name = "l2fwd-1link")]
 struct Opt {
+    /// Default buffer size
     #[structopt(long, default_value = "4096")]
     bufsize: usize,
 
+    /// How many buffers
     #[structopt(long, default_value = "4096")]
     bufnum: usize,
 
+    /// Batch size
     #[structopt(long, default_value = "64")]
     batch_size: usize,
 
-    #[structopt(long, default_value = "none")]
+    /// The link to attach to
+    #[structopt(long)]
     link_name: std::string::String,
 
+    /// Link channel
     #[structopt(long, default_value = "0")]
     link_channel: usize,
 
+    /// Use HUGE TLB
     #[structopt(long)]
     huge_tlb: bool,
 
+    /// Use zero copy mode
     #[structopt(long)]
     zero_copy: bool,
 
-    #[structopt(long)]
+    /// Copy mode
+    #[structopt(long, conflicts_with = "zero-copy")]
     copy: bool,
 }
 
 fn main() {
     let opt = Opt::from_args();
-
-    if opt.link_name == "none" {
-        println!("Link name parameter is required");
-        return;
-    }
 
     assert!(setrlimit(Resource::MEMLOCK, RLIM_INFINITY, RLIM_INFINITY).is_ok());
 
@@ -145,8 +148,8 @@ fn main() {
         Err(err) => panic!("no socket for you: {:?}", err),
     };
 
-    // Create a local buf pool and get bufs from the global pool. Since there are no other users of the pool, grab
-    // all the bufs.
+    // Create a local buf pool and get bufs from the global pool. Since there
+    // are no other users of the pool, grab all the bufs.
     let mut bufs: Vec<Buf<BufCustom>> = Vec::with_capacity(opt.bufnum);
     let r = buf_pool.lock().unwrap().get(&mut bufs, opt.bufnum);
     match r {

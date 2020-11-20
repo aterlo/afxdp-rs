@@ -59,41 +59,45 @@ struct BufCustom {}
 #[derive(StructOpt, Debug)]
 #[structopt(name = "l2fwd-2link")]
 struct Opt {
+    /// Default buffer size
     #[structopt(long, default_value = "2048")]
     bufsize: usize,
 
+    /// Number of buffers
     #[structopt(long, default_value = "4096")]
     bufnum: usize,
 
-    #[structopt(long, default_value = "none")]
+    /// First link name
+    #[structopt(long)]
     link1_name: std::string::String,
 
+    /// First link channel
     #[structopt(long, default_value = "0")]
     link1_channel: usize,
 
-    #[structopt(long, default_value = "none")]
+    /// Second link name
+    #[structopt(long)]
     link2_name: std::string::String,
 
+    /// Second link channel
     #[structopt(long, default_value = "0")]
     link2_channel: usize,
 
+    /// Use HUGE TLB
     #[structopt(long)]
     huge_tlb: bool,
 
+    /// Zero copy mode
     #[structopt(long)]
     zero_copy: bool,
 
-    #[structopt(long)]
+    /// Copy mode
+    #[structopt(long, conflicts_with = "zero-copy")]
     copy: bool,
 }
 
 fn main() {
     let opt = Opt::from_args();
-
-    if opt.link1_name == "none" || opt.link2_name == "none" {
-        println!("Link name parameters must be passed");
-        return;
-    }
 
     let initial_fill_num = min(opt.bufnum / 2, RING_SIZE as usize);
 
