@@ -88,6 +88,10 @@ impl<'a, T: std::default::Default + std::marker::Copy> BufPool<'a, T> {
     pub fn len(&self) -> usize {
         self.bufs.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.bufs.is_empty()
+    }
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> Drop for BufPool<'a, T> {
