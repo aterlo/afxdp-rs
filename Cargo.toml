@@ -10,10 +10,9 @@ license = "Apache-2.0"
 keywords = ["AF_XDP", "XDP"]
 categories = ["network-programming"]
 readme = "README.md"
-maintenance = { status = "actively-developed" }
 
 [dependencies]
-libbpf-sys = { version = "0.0.7-1" }
+libbpf-sys = "0.0.7-1"
 libc = "0.2"
 errno = "0.2"
 arraydeque = "0.4"
@@ -21,9 +20,9 @@ arraydeque = "0.4"
 [dev-dependencies]
 criterion = "0.3"
 structopt = "0.3"
-rlimit = "0.3"
-crossbeam-channel = "0.4"
+rlimit = "0.5.3"
+crossbeam-channel = "0.5.0"
 
 [[bench]]
-name = "bufpool"
+name = "buf_pool"
 harness = false

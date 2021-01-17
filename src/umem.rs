@@ -1,4 +1,5 @@
 use std::cmp::min;
+use std::convert::TryInto;
 
 use libbpf_sys::{
     _xsk_ring_cons__comp_addr, _xsk_ring_cons__peek, _xsk_ring_cons__release,
@@ -8,14 +9,14 @@ use libbpf_sys::{
 };
 use std::sync::{Arc, Mutex};
 
-use crate::buf::Buf;
-use crate::mmaparea::MmapArea;
+use crate::mmap_area::MmapArea;
+use crate::buf_mmap::BufMmap;
 
 /// AF_XDP Umem
 #[derive(Debug)]
 pub struct Umem<'a, T: std::default::Default + std::marker::Copy> {
-    pub area: Arc<MmapArea<'a, T>>, // TODO: Could this be not public?
-    pub umem: Mutex<Box<xsk_umem>>, // TODO: Could this be not public?
+    pub(crate) area: Arc<MmapArea<'a, T>>,
+    pub(crate) umem: Mutex<Box<xsk_umem>>,
 }
 unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for Umem<'a, T> {}
 
@@ -119,7 +120,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T
     #[inline]
     pub fn service(
         &mut self,
-        bufs: &mut Vec<Buf<T>>,
+        bufs: &mut Vec<BufMmap<T>>,
         batch_size: usize,
     ) -> Result<usize, UmemError> {
         let mut idx: u32 = 0;
@@ -136,7 +137,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T
         let buf_len = self.umem.area.buf_len;
 
         for _ in 0..ready {
-            let buf: Buf<T>;
+            let buf: BufMmap<T>;
 
             unsafe {
                 let ptr = _xsk_ring_cons__comp_addr(self.cq.as_mut(), idx);
@@ -144,11 +145,11 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T
 
                 // Note that the completion and fill queues operate on offsets not
                 // buffer numbers while Buf contains the buffer number.
-                buf = Buf {
+                buf = BufMmap {
                     addr: *ptr / buf_len as u64,
-                    len: buf_len as u32,
+                    len: buf_len.try_into().unwrap(),
                     data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len as usize),
-                    custom: Default::default(),
+                    user: Default::default(),
                 };
             }
 
@@ -173,7 +174,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemFillQueue<'a, T> {
     #[inline]
     pub fn fill(
         &mut self,
-        bufs: &mut Vec<Buf<T>>,
+        bufs: &mut Vec<BufMmap<T>>,
         mut batch_size: usize,
     ) -> Result<usize, UmemError> {
         let mut idx: u32 = 0;

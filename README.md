@@ -1,6 +1,6 @@
 # AFXDP-rs
 
-This module provides a Rust interface for AF_XDP built on libbpf-sys (https://github.com/alexforster/libbpf-sys).
+This module provides a Rust interface for AF_XDP which wraps [libbpf](https://github.com/libbpf/libbpf) built on [libbpf-sys](https://github.com/alexforster/libbpf-sys).
 
 **Author:** Dan Siemon \<dan@coverfire.com\>
 
@@ -59,15 +59,27 @@ Small amounts of packet loss starts at about 6.5M PPS unidirectional and 6.0M PP
 
 Little effort has been put into optimizing this so I expect there are some easy performance wins.
 
-## AF_XDP Features
+## Supported Features
+* HUGE TLB flag to mmap area: Optional (command line arg in the sample programs)
 
-* HUGE TLB flag: Optional (command line arg in the sample programs)
+## Required AF_XDP Features
+
+* Need wakeup flag (implies Linux >= 5.4)
+* Aligned chunk mode
+
+## Supported AF_XDP Features
+
 * ZEROCOPY flag: Optional (command line arg in the sample programs)
-* Only the chunked memory mode is supported
-* Need wakeup flag is required which implies Linux >= 5.4
+* Aligned chunk mode
+
+## Unsupported AF_XDP Features (for now)
+
+* Unaligned chunk mode
+* Shared Umem (new in Linux 5.10)
+* Busy poll (coming in Linux 5.11)
 
 ## To Do
 
 * Currently this module is not 'safe' because Bufs can outlive the memory pool they are associated with. I believe fixing this will require adding an Arc to each Buf. I have not had the time yet to determine the performance impact of this and would appreciate any other ideas.
-* Allow more configurability of AF XDP features
 * All interactions with the Tx, Rx, fill and completion queues are done with C functions that wrap the inline functions in libbpf. I believe this means that these hot functions cannot be inlined in Rust. In the medium term we should build pure Rust functions so they can be inlined.
+* A more idiomatic Rust interface could be built by talking directly to the kernel vs. wrapping libbpf functions.

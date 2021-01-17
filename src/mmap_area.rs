@@ -1,19 +1,21 @@
+use std::marker::PhantomData;
+use std::sync::{Arc};
+use std::convert::TryInto;
+
 use errno::errno;
 use libc::{
     c_int, c_void, mmap, munmap, MAP_ANONYMOUS, MAP_HUGETLB, MAP_PRIVATE, PROT_READ, PROT_WRITE,
 };
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
 
-use crate::bufpool::{BufPool, BufPoolError};
+use crate::buf_mmap::BufMmap;
 
 /// A mapped memory area used to move packets between the kernel and userspace.
 #[derive(Debug)]
 pub struct MmapArea<'a, T: std::default::Default + std::marker::Copy> {
     phantom: PhantomData<&'a T>,
-    pub buf_num: usize,
-    pub buf_len: usize,
-    pub ptr: *mut c_void, // TODO: Can this be be private. Only MmapArea should be able to create Bufs.
+    pub(crate) buf_num: usize,
+    pub(crate) buf_len: usize,
+    pub(crate) ptr: *mut c_void,
 }
 unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for MmapArea<'a, T> {}
 
@@ -41,7 +43,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
         buf_num: usize,
         buf_len: usize,
         options: MmapAreaOptions,
-    ) -> Result<(Arc<MmapArea<'a, T>>, Arc<Mutex<BufPool<'a, T>>>), MmapError> {
+    ) -> Result<(Arc<MmapArea<'a, T>>, Vec<BufMmap<'a, T>>), MmapError> {
         let ptr: *mut c_void;
         let mut flags: c_int = MAP_PRIVATE | MAP_ANONYMOUS;
 
@@ -66,19 +68,31 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
         }
 
         let ma = Arc::new(MmapArea {
-            buf_num: buf_num,
-            buf_len: buf_len,
-            ptr: ptr,
+            buf_num,
+            buf_len,
+            ptr,
             phantom: PhantomData,
         });
 
-        let r: Result<Arc<Mutex<BufPool<T>>>, BufPoolError> =
-            BufPool::new(ma.clone(), buf_num, buf_len);
-        if let Ok(bp) = r {
-            Ok((ma, bp))
-        } else {
-            Err(MmapError::Failed)
+        // Create the bufs
+        let mut bufs = Vec::with_capacity(buf_num);
+
+        for i in 0..buf_num {
+            let buf: BufMmap<T>;
+            unsafe {
+                let ptr = ma.ptr.offset((i * buf_len) as isize);
+                buf = BufMmap::<T> {
+                    addr: i as u64,
+                    len: buf_len.try_into().unwrap(), // TODO: Should this start at 0?
+                    data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len),
+                    user: Default::default(),
+                };
+            }
+
+            bufs.push(buf);
         }
+
+        Ok((ma, bufs))
     }
 }
 
@@ -98,38 +112,57 @@ impl<'a, T: std::default::Default + std::marker::Copy> Drop for MmapArea<'a, T> 
 }
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::convert::TryInto;
 
-    use super::*;
+    use super::{MmapArea, MmapAreaOptions, MmapError};
+    use crate::buf_pool::BufPool;
+    use crate::buf_mmap::BufMmap;
+    use crate::buf_pool_vec::BufPoolVec;
 
     #[derive(Default, Copy, Clone, Debug)]
     struct BufCustom {}
 
     #[test]
-    fn buf_values() {
-        let options = MmapAreaOptions { huge_tlb: false };
-        let r: Result<(Arc<MmapArea<BufCustom>>, Arc<Mutex<BufPool<BufCustom>>>), MmapError> =
-            MmapArea::new(10, 8, options);
+    fn bufs_to_pool() {
+        const BUF_NUM: usize = 10;
 
-        let (area, buf_pool) = match r {
+        let options = MmapAreaOptions { huge_tlb: false };
+        let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
+            MmapArea::new(BUF_NUM, 8, options);
+
+        let (area, mut bufs) = match r {
+            Ok((area, bufs)) => (area, bufs),
+            Err(err) => panic!("{:?}", err),
+        };
+
+        assert_eq!(area.buf_num, BUF_NUM);
+        assert_eq!(area.buf_len, 8);
+        assert_eq!(bufs.len(), BUF_NUM);
+
+        let mut pool = BufPoolVec::new(BUF_NUM);
+
+        let r = pool.put(&mut bufs, area.buf_num);
+        assert_eq!(r, BUF_NUM);
+        assert_eq!(pool.len(), BUF_NUM);
+    }
+
+    #[test]
+    fn buf_values() {
+        const BUF_NUM: usize = 88;
+
+        let options = MmapAreaOptions { huge_tlb: false };
+        let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
+            MmapArea::new(BUF_NUM, 8, options);
+
+        let (area, mut bufs) = match r {
             Ok((area, buf_pool)) => (area, buf_pool),
             Err(err) => panic!("{:?}", err),
         };
 
-        assert_eq!(area.buf_num, 10);
+        assert_eq!(area.buf_num, BUF_NUM);
         assert_eq!(area.buf_len, 8);
-
-        assert_eq!(buf_pool.lock().unwrap().len(), 10);
-
-        let mut bufs = Vec::with_capacity(10);
-        let r = buf_pool.lock().unwrap().get(&mut bufs, 10);
-        match r {
-            Ok(_) => {}
-            Err(err) => panic!("error: {:?}", err),
-        }
-
-        assert_eq!(buf_pool.lock().unwrap().len(), 0);
-        assert_eq!(bufs.len(), 10);
+        assert_eq!(bufs.len(), BUF_NUM);
 
         //
         // Write a value to each buf and then ensure we read the same values out

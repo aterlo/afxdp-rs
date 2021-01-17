@@ -7,27 +7,30 @@
 //
 use arraydeque::{ArrayDeque, Wrapping};
 use crossbeam_channel::{bounded, select, Receiver, Sender};
-use rlimit::{setrlimit, Resource, RLIM_INFINITY};
+use rlimit::{setrlimit, Resource, Rlim};
 use std::cmp::min;
 use std::thread;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
 
 use afxdp::buf::Buf;
-use afxdp::mmaparea::{MmapArea, MmapAreaOptions};
+use afxdp::buf_mmap::BufMmap;
+use afxdp::mmap_area::{MmapArea, MmapAreaOptions};
 use afxdp::socket::{Socket, SocketOptions, SocketRx, SocketTx};
 use afxdp::umem::{Umem, UmemCompletionQueue, UmemFillQueue};
 use afxdp::PENDING_LEN;
 use libbpf_sys::{XSK_RING_CONS__DEFAULT_NUM_DESCS, XSK_RING_PROD__DEFAULT_NUM_DESCS};
 
-fn swap_macs(bufs: &mut ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping>) -> Result<(), ()> {
+fn swap_macs(bufs: &mut ArrayDeque<[BufMmap<BufCustom>; PENDING_LEN], Wrapping>) -> Result<(), ()> {
     let mut tmp1: [u8; 12] = Default::default();
 
     for buf in bufs {
-        tmp1.copy_from_slice(&buf.data[0..12]);
+        let data = buf.get_data_mut();
 
-        buf.data[0..6].copy_from_slice(&tmp1[6..12]);
-        buf.data[6..12].copy_from_slice(&tmp1[0..6]);
+        tmp1.copy_from_slice(&mut data[0..12]);
+
+        data[0..6].copy_from_slice(&tmp1[6..12]);
+        data[6..12].copy_from_slice(&tmp1[0..6]);
     }
 
     Ok(())
@@ -35,7 +38,7 @@ fn swap_macs(bufs: &mut ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping>) -> 
 
 fn forward(
     tx: &mut SocketTx<BufCustom>,
-    bufs: &mut ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping>,
+    bufs: &mut ArrayDeque<[BufMmap<BufCustom>; PENDING_LEN], Wrapping>,
     batch_size: usize,
 ) -> Result<usize, ()> {
     if bufs.is_empty() {
@@ -107,7 +110,7 @@ struct Opt {
 fn main() {
     let opt = Opt::from_args();
 
-    assert!(setrlimit(Resource::MEMLOCK, RLIM_INFINITY, RLIM_INFINITY).is_ok());
+    assert!(setrlimit(Resource::MEMLOCK, Rlim::INFINITY, Rlim::INFINITY).is_ok());
 
     let options: MmapAreaOptions;
     if opt.huge_tlb {
@@ -116,8 +119,8 @@ fn main() {
         options = MmapAreaOptions { huge_tlb: false };
     }
     let r = MmapArea::new(opt.bufnum, opt.bufsize, options);
-    let (area, buf_pool) = match r {
-        Ok((area, buf_pool)) => (area, buf_pool),
+    let (area, mut bufs) = match r {
+        Ok((area, bufs)) => (area, bufs),
         Err(err) => panic!("no mmap for you: {:?}", err),
     };
 
@@ -148,19 +151,7 @@ fn main() {
         Err(err) => panic!("no socket for you: {:?}", err),
     };
 
-    // Create a local buf pool and get bufs from the global pool. Since there
-    // are no other users of the pool, grab all the bufs.
-    let mut bufs: Vec<Buf<BufCustom>> = Vec::with_capacity(opt.bufnum);
-    let r = buf_pool.lock().unwrap().get(&mut bufs, opt.bufnum);
-    match r {
-        Ok(n) => {
-            if n != opt.bufnum {
-                panic!("failed to get initial bufs {} {}", n, opt.bufnum,);
-            }
-        }
-        Err(err) => panic!("error: {:?}", err),
-    }
-
+    // Fill the Umem
     let r = umem1fq.fill(
         &mut bufs,
         min(XSK_RING_PROD__DEFAULT_NUM_DESCS as usize, opt.bufnum),
@@ -197,7 +188,7 @@ fn main() {
     // The loop
     //
 
-    let mut v: ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping> = ArrayDeque::new();
+    let mut v: ArrayDeque<[BufMmap<BufCustom>; PENDING_LEN], Wrapping> = ArrayDeque::new();
 
     let mut state = State {
         cq: umem1cq,

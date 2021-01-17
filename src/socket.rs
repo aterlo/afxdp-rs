@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::ffi::CString;
+use std::convert::TryInto;
 
 use arraydeque::{ArrayDeque, Wrapping};
 use errno::errno;
@@ -14,7 +15,7 @@ use libbpf_sys::{
 use libc::{poll, pollfd, sendto, EAGAIN, EBUSY, ENETDOWN, ENOBUFS, MSG_DONTWAIT, POLLIN, POLLOUT};
 use std::sync::Arc;
 
-use crate::buf::Buf;
+use crate::buf_mmap::BufMmap;
 use crate::umem::Umem;
 use crate::PENDING_LEN;
 
@@ -290,9 +291,9 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
     #[inline]
     pub fn try_recv(
         &mut self,
-        bufs: &mut ArrayDeque<[Buf<T>; PENDING_LEN], Wrapping>,
+        bufs: &mut ArrayDeque<[BufMmap<T>; PENDING_LEN], Wrapping>,
         mut batch_size: usize,
-        custom: T,
+        user: T,
     ) -> Result<usize, SocketError> {
         let mut idx_rx: u32 = 0;
         let rcvd: usize;
@@ -308,16 +309,16 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
 
         for _ in 0..rcvd {
             let desc: *const xdp_desc;
-            let b: Buf<T>;
+            let b: BufMmap<T>;
 
             unsafe {
                 desc = _xsk_ring_cons__rx_desc(self.rx.as_mut(), idx_rx);
                 let ptr = self.socket.umem.area.ptr.offset((*desc).addr as isize);
-                b = Buf {
+                b = BufMmap {
                     addr: (*desc).addr,
-                    len: (*desc).len,
+                    len: (*desc).len.try_into().unwrap(),
                     data: std::slice::from_raw_parts_mut(ptr as *mut u8, (*desc).len as usize),
-                    custom: custom,
+                    user,
                 };
             }
 
@@ -350,7 +351,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
     #[inline]
     pub fn try_send(
         &mut self,
-        bufs: &mut ArrayDeque<[Buf<T>; PENDING_LEN], Wrapping>,
+        bufs: &mut ArrayDeque<[BufMmap<T>; PENDING_LEN], Wrapping>,
         mut batch_size: usize,
     ) -> Result<usize, SocketError> {
         let mut idx_tx: u32 = 0;
@@ -364,13 +365,13 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
         }
 
         for _ in 0..ready {
-            let b: Buf<T>;
+            let b: BufMmap<T>;
 
             b = bufs.pop_front().unwrap();
 
             unsafe {
                 let desc = _xsk_ring_prod__tx_desc(self.tx.as_mut(), idx_tx);
-                (*desc).len = b.len;
+                (*desc).len = b.len.try_into().unwrap();
                 (*desc).addr = b.addr;
             }
 

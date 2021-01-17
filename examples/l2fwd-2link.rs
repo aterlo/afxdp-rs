@@ -6,25 +6,24 @@
 //     ethtool -X
 //
 use arraydeque::{ArrayDeque, Wrapping};
-use rlimit::{setrlimit, Resource, RLIM_INFINITY};
+use rlimit::{setrlimit, Resource, Rlim};
 use std::cmp::min;
 use structopt::StructOpt;
 
-use afxdp::buf::Buf;
-use afxdp::bufpool::BufPool;
-use afxdp::mmaparea::{MmapArea, MmapAreaOptions, MmapError};
+use afxdp::buf_mmap::BufMmap;
+use afxdp::mmap_area::{MmapArea, MmapAreaOptions, MmapError};
 use afxdp::socket::{Socket, SocketOptions, SocketRx, SocketTx};
 use afxdp::umem::{Umem, UmemCompletionQueue, UmemFillQueue};
 use afxdp::PENDING_LEN;
 
-const RING_SIZE: u32 = 4096;
-const SOCKET_BATCH_SIZE: usize = 1024;
-const SERVICE_BATCH_SIZE: usize = 1024;
-const FILL_THRESHOLD: usize = 512;
+const RING_SIZE: u32 = 2048;
+const SOCKET_BATCH_SIZE: usize = 64;
+const SERVICE_BATCH_SIZE: usize = 64;
+const FILL_THRESHOLD: usize = 64;
 
 fn forward(
     tx: &mut SocketTx<BufCustom>,
-    bufs: &mut ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping>,
+    bufs: &mut ArrayDeque<[BufMmap<BufCustom>; PENDING_LEN], Wrapping>,
 ) -> Result<usize, ()> {
     if bufs.is_empty() {
         return Ok(0);
@@ -101,7 +100,7 @@ fn main() {
 
     let initial_fill_num = min(opt.bufnum / 2, RING_SIZE as usize);
 
-    assert!(setrlimit(Resource::MEMLOCK, RLIM_INFINITY, RLIM_INFINITY).is_ok());
+    assert!(setrlimit(Resource::MEMLOCK, Rlim::INFINITY, Rlim::INFINITY).is_ok());
 
     let options: MmapAreaOptions;
     if opt.huge_tlb {
@@ -112,12 +111,12 @@ fn main() {
     let r: Result<
         (
             std::sync::Arc<MmapArea<BufCustom>>,
-            std::sync::Arc<std::sync::Mutex<BufPool<'_, BufCustom>>>,
+            Vec<BufMmap<BufCustom>>,
         ),
         MmapError,
     > = MmapArea::new(opt.bufnum, opt.bufsize, options);
-    let (area, buf_pool) = match r {
-        Ok((area, buf_pool)) => (area, buf_pool),
+    let (area, mut bufs) = match r {
+        Ok((area, bufs)) => (area, bufs),
         Err(err) => panic!("Failed to create MmapArea: {:?}", err),
     };
 
@@ -164,17 +163,6 @@ fn main() {
     };
 
     //
-    // Create our local pool of bufs
-    // Since there are no other users of the pool, take all the bufs from the pool.
-    //
-    let mut bufs: Vec<Buf<BufCustom>> = Vec::with_capacity(opt.bufnum);
-    let r = buf_pool.lock().unwrap().get(&mut bufs, opt.bufnum);
-    match r {
-        Ok(_) => {}
-        Err(err) => panic!("error: {:?}", err),
-    }
-
-    //
     // umem1
     //
     let r = umem1fq.fill(&mut bufs, initial_fill_num);
@@ -209,8 +197,7 @@ fn main() {
     //
     // The loop
     //
-
-    let mut pending: [ArrayDeque<[Buf<BufCustom>; PENDING_LEN], Wrapping>; 2] =
+    let mut pending: [ArrayDeque<[BufMmap<BufCustom>; PENDING_LEN], Wrapping>; 2] =
         [ArrayDeque::new(), ArrayDeque::new()];
 
     let mut state: [State; 2] = [
@@ -234,8 +221,16 @@ fn main() {
 
     let mut pos: usize = 0;
     let bc = BufCustom {};
+    //let mut last_rx_packets = 0;
     loop {
         let other = (pos + 1) % 2;
+
+        /*
+        if stats[pos].rx_packets > last_rx_packets + 1000000 {
+            println!("RX Packets: {} {}", stats[pos].rx_packets, last_rx_packets);
+            last_rx_packets = stats[pos].rx_packets;
+        }
+        */
 
         //
         // Service completion queue
