@@ -1,6 +1,6 @@
 use std::cmp::min;
-use std::ffi::CString;
 use std::convert::TryInto;
+use std::ffi::CString;
 
 use arraydeque::{ArrayDeque, Wrapping};
 use errno::errno;
@@ -283,8 +283,13 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
 
         let mut fds: [pollfd; 1] = [fd1];
 
+        let ret: i32;
         unsafe {
-            poll(&mut fds[0], 1, POLL_TIMEOUT);
+            ret = poll(&mut fds[0], 1, POLL_TIMEOUT);
+        }
+        if ret < 0 {
+            let errno = errno().0;
+            println!("poll error in SocketRx wake: ret={} errno={}", ret, errno);
         }
     }
 
@@ -344,7 +349,9 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> Drop for SocketRx<'a, T> {
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        // Cleanup is in the parent Socket
+    }
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
@@ -407,7 +414,9 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
                     // otherwise. Copying that behavior for now.
                     let errno = errno().0;
                     match errno {
-                        ENOBUFS | EAGAIN | EBUSY | ENETDOWN => {}
+                        ENOBUFS | EAGAIN | EBUSY | ENETDOWN => {
+                            // These error codes are OK according to the kernel xdpsock_user example
+                        }
                         _ => panic!("xdpsock_user.c sample panics here"),
                     }
                 }
@@ -421,5 +430,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> Drop for SocketTx<'a, T> {
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        // Cleanup is in the parent Socket
+    }
 }
