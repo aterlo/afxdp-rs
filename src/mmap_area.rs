@@ -4,7 +4,7 @@ use std::convert::TryInto;
 
 use errno::errno;
 use libc::{
-    c_int, c_void, mmap, munmap, MAP_ANONYMOUS, MAP_HUGETLB, MAP_PRIVATE, PROT_READ, PROT_WRITE,
+    c_int, c_void, mmap, munmap, MAP_ANONYMOUS, MAP_HUGETLB, MAP_PRIVATE, PROT_READ, PROT_WRITE, MAP_FAILED,
 };
 
 use crate::buf_mmap::BufMmap;
@@ -62,8 +62,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
             );
         }
 
-        // TODO: Is this the correct way to check for NULL c_void?
-        if ptr == std::ptr::null_mut() {
+        if ptr == MAP_FAILED {
             return Err(MmapError::Failed);
         }
 
@@ -99,6 +98,11 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
 impl<'a, T: std::default::Default + std::marker::Copy> Drop for MmapArea<'a, T> {
     fn drop(&mut self) {
         let r: c_int;
+
+        // Don't try to unmap if the original map failed
+        if self.ptr == MAP_FAILED {
+            return;
+        }
 
         unsafe {
             r = munmap(self.ptr, self.buf_num * self.buf_len);

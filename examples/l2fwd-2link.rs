@@ -63,7 +63,7 @@ struct Opt {
     bufsize: usize,
 
     /// Number of buffers
-    #[structopt(long, default_value = "4096")]
+    #[structopt(long, default_value = "65536")]
     bufnum: usize,
 
     /// First link name
@@ -119,6 +119,7 @@ fn main() {
         Ok((area, bufs)) => (area, bufs),
         Err(err) => panic!("Failed to create MmapArea: {:?}", err),
     };
+    println!("Created MmapArea with {} buffers of size {}", bufs.len(), opt.bufsize);
 
     let r = Umem::new(area.clone(), RING_SIZE, RING_SIZE);
     let (umem1, umem1cq, mut umem1fq) = match r {
@@ -165,6 +166,7 @@ fn main() {
     //
     // umem1
     //
+    println!("Filling umem1 with {} buffers", initial_fill_num);
     let r = umem1fq.fill(&mut bufs, initial_fill_num);
     match r {
         Ok(n) => {
@@ -181,6 +183,7 @@ fn main() {
     //
     // umem2
     //
+    println!("Filling umem2 with {} buffers", initial_fill_num);
     let r = umem2fq.fill(&mut bufs, initial_fill_num);
     match r {
         Ok(n) => {
