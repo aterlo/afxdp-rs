@@ -1,5 +1,4 @@
-use std::cmp::min;
-use std::convert::TryInto;
+use std::{cmp::min, u64};
 
 use libbpf_sys::{
     _xsk_ring_cons__comp_addr, _xsk_ring_cons__peek, _xsk_ring_cons__release,
@@ -9,15 +8,16 @@ use libbpf_sys::{
 };
 use std::sync::{Arc, Mutex};
 
-use crate::mmap_area::MmapArea;
 use crate::buf_mmap::BufMmap;
+use crate::mmap_area::MmapArea;
 
 /// AF_XDP Umem
 #[derive(Debug)]
 pub struct Umem<'a, T: std::default::Default + std::marker::Copy> {
     pub(crate) area: Arc<MmapArea<'a, T>>,
-    pub(crate) umem: Mutex<Box<xsk_umem>>,
+    pub(crate) umem: Mutex<Box<xsk_umem>>, // TODO - Rethink need for Mutex here
 }
+// TODO - Document why this is safe
 unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for Umem<'a, T> {}
 
 /// Completion queue per Umem
@@ -58,7 +58,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
         let cfg = xsk_umem_config {
             fill_size: fill_ring_size,
             comp_size: completion_ring_size,
-            frame_size: area.buf_len as u32,
+            frame_size: area.get_buf_len() as u32,
             frame_headroom: XSK_UMEM__DEFAULT_FRAME_HEADROOM,
             flags: 0,
         };
@@ -80,8 +80,15 @@ impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
 
         let ret: std::os::raw::c_int;
         unsafe {
-            let size = (area.buf_num * area.buf_len) as u64;
-            ret = xsk_umem__create(umem_ptr, area.ptr, size, fq.as_mut(), cq.as_mut(), &cfg);
+            let size = (area.get_buf_num() * area.get_buf_len()) as u64;
+            ret = xsk_umem__create(
+                umem_ptr,
+                area.get_ptr(),
+                size,
+                fq.as_mut(),
+                cq.as_mut(),
+                &cfg,
+            );
         }
 
         if ret != 0 {
@@ -89,17 +96,17 @@ impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
         }
 
         let arc = Arc::new(Umem {
-            area: area,
+            area,
             umem: Mutex::new(unsafe { Box::from_raw(*umem_ptr) }),
         });
 
         let cq = UmemCompletionQueue {
             umem: arc.clone(),
-            cq: cq,
+            cq,
         };
         let fq = UmemFillQueue {
             umem: arc.clone(),
-            fq: fq,
+            fq,
         };
 
         Ok((arc, cq, fq))
@@ -108,6 +115,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
 
 impl<'a, T: std::default::Default + std::marker::Copy> Drop for Umem<'a, T> {
     fn drop(&mut self) {
+        // TODO Does this need to test for null too?
         unsafe {
             xsk_umem__delete(self.umem.lock().unwrap().as_mut());
         }
@@ -134,20 +142,19 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T
             return Ok(0);
         }
 
-        let buf_len = self.umem.area.buf_len;
+        let buf_len = self.umem.area.get_buf_len();
 
         for _ in 0..ready {
             let buf: BufMmap<T>;
 
             unsafe {
-                let ptr = _xsk_ring_cons__comp_addr(self.cq.as_mut(), idx);
+                let addr = _xsk_ring_cons__comp_addr(self.cq.as_mut(), idx);
+                let ptr = self.umem.area.get_ptr().offset(*addr as isize);
                 idx += 1;
 
-                // Note that the completion and fill queues operate on offsets not
-                // buffer numbers while Buf contains the buffer number.
                 buf = BufMmap {
-                    addr: *ptr / buf_len as u64,
-                    len: buf_len.try_into().unwrap(),
+                    addr: *addr,
+                    len: 0,
                     data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len as usize),
                     user: Default::default(),
                 };
@@ -187,8 +194,6 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemFillQueue<'a, T> {
         }
 
         if ready > 0 {
-            let buf_len = self.umem.area.buf_len;
-
             for _ in 0..ready {
                 let b = bufs.pop();
                 match b {
@@ -196,9 +201,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemFillQueue<'a, T> {
                         let ptr = _xsk_ring_prod__fill_addr(self.fq.as_mut(), idx);
                         idx += 1;
 
-                        // Note that the completion and fill queues operate on offsets not
-                        // buffer numbers while Buf contains the buffer number.
-                        *ptr = (b.addr * buf_len as u64).into();
+                        *ptr = (b.addr as u64).into();
                     },
                     None => {
                         todo!("tried to get buffer from empty pool");

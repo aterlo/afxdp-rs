@@ -1,16 +1,27 @@
 use std::convert::TryFrom;
+use std::fmt;
 
 use crate::buf::Buf;
 
 #[derive(Debug)]
-pub struct BufMmap<'a, T> where T: std::default::Default {
-    pub(crate) addr: u64, // TODO: Does this need to be a u64?, this should be called index not addr.
+pub struct BufMmap<'a, T>
+where
+    T: std::default::Default,
+{
+    /// addr is is the address in the umem area (offset into area)
+    pub(crate) addr: u64,
+    /// len is the length of the buffer that is valid packet data
     pub(crate) len: u16,
+    /// data is the slice of u8 that contains the packet data
     pub(crate) data: &'a mut [u8],
+    /// user is the user defined type
     pub(crate) user: T,
 }
 
-impl<T> Buf<T> for BufMmap<'_, T> where T: std::default::Default {
+impl<T> Buf<T> for BufMmap<'_, T>
+where
+    T: std::default::Default,
+{
     fn get_data(&self) -> &[u8] {
         &self.data[0..]
     }
@@ -40,16 +51,32 @@ impl<T> Buf<T> for BufMmap<'_, T> where T: std::default::Default {
     }
 }
 
-impl<'a, T> Drop for BufMmap<'a, T> where T: std::default::Default {
-    fn drop(&mut self) {
-        //todo!("bug");
+impl<'a, T> fmt::Display for BufMmap<'a, T>
+where
+    T: std::default::Default,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "BufMMap addr={} len={} data={:?}",
+            self.addr,
+            self.len,
+            &(self.data[0]) as *const u8
+        )
     }
+}
+
+impl<'a, T> Drop for BufMmap<'a, T>
+where
+    T: std::default::Default,
+{
+    fn drop(&mut self) {}
 }
 
 /*
 #[derive(Debug)]
 pub struct BufMmapConst<'a, T, const N: u16> where T: std::default::Default {
-    pub addr: u64, // TODO: Does this need to be a u64? Pretty sure not.
+    pub addr: u64,
     pub data: &'a mut [u8],
     pub user: T,
 }

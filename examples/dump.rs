@@ -1,62 +1,46 @@
 //
-// Simple example that received frames from one link, swaps the MAC addresses and sends the packets back out
-// the same link.
+// Simple example that received frames from one link, parses the packet with Pnet and prints it.
 //
 // The link and associated channel are passed as command line args. The easiest way to direct all packets arriving
 // at a link to a single channel is with ethtool -X.
 //
 use arraydeque::{ArrayDeque, Wrapping};
-use crossbeam_channel::{bounded, select, Receiver, Sender};
 use rlimit::{setrlimit, Resource, Rlim};
 use std::cmp::min;
-use std::thread;
-use std::time::{Duration, Instant};
 use structopt::StructOpt;
 
 use afxdp::buf::Buf;
 use afxdp::buf_mmap::BufMmap;
 use afxdp::mmap_area::{MmapArea, MmapAreaOptions};
-use afxdp::socket::{Socket, SocketOptions, SocketRx, SocketTx};
-use afxdp::umem::{Umem, UmemCompletionQueue, UmemFillQueue};
+use afxdp::socket::{Socket, SocketOptions, SocketRx};
+use afxdp::umem::{Umem, UmemFillQueue};
 use afxdp::PENDING_LEN;
 use libbpf_sys::{XSK_RING_CONS__DEFAULT_NUM_DESCS, XSK_RING_PROD__DEFAULT_NUM_DESCS};
 
-fn swap_macs(bufs: &mut ArrayDeque<[BufMmap<BufCustom>; PENDING_LEN], Wrapping>) -> Result<(), ()> {
-    let mut tmp1: [u8; 12] = Default::default();
+use pnet::packet::ethernet::EthernetPacket;
 
-    for buf in bufs {
-        let data = buf.get_data_mut();
-
-        tmp1.copy_from_slice(&mut data[0..12]);
-
-        data[0..6].copy_from_slice(&tmp1[6..12]);
-        data[6..12].copy_from_slice(&tmp1[0..6]);
+// Parse the packet with Pnet and print
+fn dump<'a>(
+    input: &mut ArrayDeque<[BufMmap<'a, BufCustom>; PENDING_LEN], Wrapping>,
+    buf_pool: &mut Vec<BufMmap<'a, BufCustom>>,
+    count: &mut usize,
+) {
+    if input.is_empty() {
+        return;
     }
+    *count = *count + input.len();
 
-    Ok(())
-}
+    for buf in input.drain(0..) {
+        let ethernet = EthernetPacket::new(buf.get_data());
+        println!("{:?}", ethernet);
 
-fn forward(
-    tx: &mut SocketTx<BufCustom>,
-    bufs: &mut ArrayDeque<[BufMmap<BufCustom>; PENDING_LEN], Wrapping>,
-    batch_size: usize,
-) -> Result<usize, ()> {
-    if bufs.is_empty() {
-        return Ok(0);
-    }
-
-    let r = tx.try_send(bufs, batch_size);
-    match r {
-        Ok(n) => Ok(n),
-        Err(_) => panic!("shouldn't happen"),
+        buf_pool.push(buf);
     }
 }
 
 struct State<'a> {
-    cq: UmemCompletionQueue<'a, BufCustom>,
     fq: UmemFillQueue<'a, BufCustom>,
     rx: SocketRx<'a, BufCustom>,
-    tx: SocketTx<'a, BufCustom>,
     fq_deficit: usize,
 }
 
@@ -72,7 +56,7 @@ struct Stats {
 struct BufCustom {}
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "l2fwd-1link")]
+#[structopt(name = "dump")]
 struct Opt {
     /// Default buffer size
     #[structopt(long, default_value = "2048")]
@@ -124,12 +108,15 @@ fn main() {
         Err(err) => panic!("no mmap for you: {:?}", err),
     };
 
+    assert!(bufs.len() == opt.bufnum);
+    println!("Total buffers={} buffer size={}", opt.bufnum, opt.bufsize);
+
     let r = Umem::new(
         area.clone(),
         XSK_RING_CONS__DEFAULT_NUM_DESCS,
         XSK_RING_PROD__DEFAULT_NUM_DESCS,
     );
-    let (umem1, umem1cq, mut umem1fq) = match r {
+    let (umem1, _, mut umem1fq) = match r {
         Ok(umem) => umem,
         Err(err) => panic!("no umem for you: {:?}", err),
     };
@@ -138,27 +125,25 @@ fn main() {
     options.zero_copy_mode = opt.zero_copy;
     options.copy_mode = opt.copy;
 
-    let r = Socket::new(
+    let r = Socket::new_rx(
         umem1.clone(),
         &opt.link_name,
         opt.link_channel,
         XSK_RING_CONS__DEFAULT_NUM_DESCS,
-        XSK_RING_PROD__DEFAULT_NUM_DESCS,
         options,
     );
-    let (_skt1, skt1rx, skt1tx) = match r {
+    let (_, skt1rx) = match r {
         Ok(skt) => skt,
         Err(err) => panic!("no socket for you: {:?}", err),
     };
 
     // Fill the Umem
-    let r = umem1fq.fill(
-        &mut bufs,
-        min(XSK_RING_PROD__DEFAULT_NUM_DESCS as usize, opt.bufnum),
-    );
+    let fill_size = min(XSK_RING_PROD__DEFAULT_NUM_DESCS as usize, opt.bufnum);
+    println!("Adding {} buffers to the fill queue", fill_size);
+    let r = umem1fq.fill(&mut bufs, fill_size);
     match r {
         Ok(n) => {
-            if n != min(XSK_RING_PROD__DEFAULT_NUM_DESCS as usize, opt.bufnum) {
+            if n != fill_size {
                 panic!(
                     "Initial fill of umem incomplete. Wanted {} got {}.",
                     opt.bufnum, n
@@ -169,72 +154,20 @@ fn main() {
     }
 
     //
-    // Start a thread to print stats
-    //
-    let (sender, receiver): (Sender<Stats>, Receiver<Stats>) = bounded(100);
-
-    thread::spawn(move || loop {
-        select! {
-            recv(receiver) -> msg => {
-                match msg {
-                    Ok(s) => {println!("{:?}", s)}
-                    Err(_) => { break; }
-                }
-            }
-        }
-    });
-
-    //
     // The loop
     //
-
     let mut v: ArrayDeque<[BufMmap<BufCustom>; PENDING_LEN], Wrapping> = ArrayDeque::new();
 
     let mut state = State {
-        cq: umem1cq,
         fq: umem1fq,
         rx: skt1rx,
-        tx: skt1tx,
         fq_deficit: 0,
     };
 
     let mut stats: Stats = Default::default();
 
-    let mut now;
-    let mut last = Instant::now();
-    let mut ticks: usize = 0;
     let custom = BufCustom {};
     loop {
-        now = Instant::now();
-        if now.duration_since(last) > Duration::from_secs(1) {
-            let r = sender.send(stats);
-            match r {
-                Ok(_) => {}
-                Err(err) => {
-                    println!("error: {:?}", err);
-                }
-            }
-
-            if ticks > 300 {
-                break;
-            }
-
-            ticks += 1;
-
-            last = now;
-        }
-
-        //
-        // Service completion queue
-        //
-        let r = state.cq.service(&mut bufs, opt.batch_size);
-        match r {
-            Ok(n) => {
-                stats.cq_bufs += n;
-            }
-            Err(err) => panic!("error: {:?}", err),
-        }
-
         //
         // Receive
         //
@@ -243,18 +176,9 @@ fn main() {
             Ok(n) => {
                 if n > 0 {
                     stats.rx_packets += n;
-
-                    let r = swap_macs(&mut v);
-                    match r {
-                        Ok(_) => {}
-                        Err(_) => println!("error"),
-                    }
-
                     state.fq_deficit += n;
-                } else {
-                    if state.fq.needs_wakeup() {
-                        state.rx.wake();
-                    }
+                } else if state.fq.needs_wakeup() {
+                    state.rx.wake();
                 }
             }
             Err(err) => {
@@ -263,21 +187,26 @@ fn main() {
         }
 
         //
-        // Forward
+        // Dump the packet headers
         //
-        let r = forward(&mut state.tx, &mut v, opt.batch_size);
-        match r {
-            Ok(n) => stats.tx_packets += n,
-            Err(err) => println!("error: {:?}", err),
+        let mut count: usize = 0;
+        dump(&mut v, &mut bufs, &mut count);
+
+        if bufs.len() == 0 {
+            println!("oops");
         }
 
         //
         // Fill buffers if required
         //
-        if state.fq_deficit > 0 {
+        const FILL_THRESHOLD: usize = 64;
+        if state.fq_deficit >= FILL_THRESHOLD {
             let r = state.fq.fill(&mut bufs, state.fq_deficit);
             match r {
                 Ok(n) => {
+                    if n != FILL_THRESHOLD {
+                        println!("under filled got {} wanted {}", n, FILL_THRESHOLD);
+                    }
                     stats.fq_bufs += n;
                     state.fq_deficit -= n;
                 }

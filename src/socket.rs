@@ -12,7 +12,7 @@ use libbpf_sys::{
     XDP_FLAGS_UPDATE_IF_NOEXIST, XDP_USE_NEED_WAKEUP, XDP_ZEROCOPY,
     XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD,
 };
-use libc::{poll, pollfd, sendto, EAGAIN, EBUSY, ENETDOWN, ENOBUFS, MSG_DONTWAIT, POLLIN, POLLOUT};
+use libc::{poll, pollfd, sendto, EAGAIN, EBUSY, ENETDOWN, ENOBUFS, MSG_DONTWAIT, POLLIN};
 use std::sync::Arc;
 
 use crate::buf_mmap::BufMmap;
@@ -41,7 +41,7 @@ unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for SocketRx<
 #[derive(Debug)]
 pub struct SocketTx<'a, T: std::default::Default + std::marker::Copy> {
     socket: Arc<Socket<'a, T>>,
-    fd: std::os::raw::c_int,
+    pub fd: std::os::raw::c_int,
     tx: Box<xsk_ring_prod>,
 }
 unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for SocketTx<'a, T> {}
@@ -111,6 +111,8 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         }
 
         if ret != 0 {
+            println!("socket err: {}", ret);
+
             return Err(SocketError::Failed);
         }
 
@@ -248,13 +250,13 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         }
 
         let arc = Arc::new(Socket {
-            umem: umem,
+            umem,
             socket: unsafe { Box::from_raw(*xsk_ptr) },
         });
 
         let tx = SocketTx {
             socket: arc.clone(),
-            tx: tx,
+            tx,
             fd: unsafe { xsk_socket__fd(*xsk_ptr) },
         };
 
@@ -277,7 +279,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
         // so that the caller can call poll once for many fds.
         let fd1: pollfd = pollfd {
             fd: self.fd,
-            events: POLLIN | POLLOUT,
+            events: POLLIN,
             revents: 0,
         };
 
@@ -312,17 +314,22 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
             return Ok(0);
         }
 
+        let buf_len = self.socket.umem.area.get_buf_len();
+
         for _ in 0..rcvd {
             let desc: *const xdp_desc;
             let b: BufMmap<T>;
 
             unsafe {
                 desc = _xsk_ring_cons__rx_desc(self.rx.as_mut(), idx_rx);
-                let ptr = self.socket.umem.area.ptr.offset((*desc).addr as isize);
+                let addr = (*desc).addr.try_into().unwrap();
+                let len = (*desc).len.try_into().unwrap();
+                let ptr = self.socket.umem.area.get_ptr().offset(addr as isize);
+
                 b = BufMmap {
-                    addr: (*desc).addr,
-                    len: (*desc).len.try_into().unwrap(),
-                    data: std::slice::from_raw_parts_mut(ptr as *mut u8, (*desc).len as usize),
+                    addr,
+                    len,
+                    data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len),
                     user,
                 };
             }
@@ -378,8 +385,8 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
 
             unsafe {
                 let desc = _xsk_ring_prod__tx_desc(self.tx.as_mut(), idx_tx);
-                (*desc).len = b.len.try_into().unwrap();
                 (*desc).addr = b.addr;
+                (*desc).len = b.len.try_into().unwrap();
             }
 
             idx_tx += 1;
@@ -394,6 +401,20 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
         self.wakeup_if_required();
 
         Ok(ready)
+    }
+
+    pub fn needs_wakeup(&mut self) -> bool {
+        let ret;
+
+        unsafe {
+            ret = _xsk_ring_prod__needs_wakeup(self.tx.as_mut());
+        }
+
+        if ret != 0 {
+            return true;
+        }
+
+        false
     }
 
     fn wakeup_if_required(&mut self) -> bool {

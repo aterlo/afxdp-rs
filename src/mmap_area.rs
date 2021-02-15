@@ -1,10 +1,10 @@
-use std::marker::PhantomData;
-use std::sync::{Arc};
-use std::convert::TryInto;
+use std::sync::Arc;
+use std::{marker::PhantomData, u64};
 
 use errno::errno;
 use libc::{
-    c_int, c_void, mmap, munmap, MAP_ANONYMOUS, MAP_HUGETLB, MAP_PRIVATE, PROT_READ, PROT_WRITE, MAP_FAILED,
+    c_int, c_void, mmap, munmap, MAP_ANONYMOUS, MAP_FAILED, MAP_HUGETLB, MAP_PRIVATE, PROT_READ,
+    PROT_WRITE,
 };
 
 use crate::buf_mmap::BufMmap;
@@ -13,11 +13,17 @@ use crate::buf_mmap::BufMmap;
 #[derive(Debug)]
 pub struct MmapArea<'a, T: std::default::Default + std::marker::Copy> {
     phantom: PhantomData<&'a T>,
-    pub(crate) buf_num: usize,
-    pub(crate) buf_len: usize,
-    pub(crate) ptr: *mut c_void,
+    buf_num: usize,
+    buf_len: usize,
+    ptr: *mut c_void,
 }
+// MMapArea is not Send and Sync by default because of the raw pointer (ptr). According to the Rustonomicon,
+// raw pointers are not Send/Sync as a 'lint'. I believe it is safe to mark MmapArea as Sync in this context.
+// https://doc.rust-lang.org/nomicon/send-and-sync.html
+// Note that we don't want to wrap MmapArea in an Mutex because we need the ptr to construct BufMMaps as buffers
+// are passed back from the kernel. This happens at very high rates depending on the traffic.
 unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for MmapArea<'a, T> {}
+unsafe impl<'a, T: std::default::Default + std::marker::Copy> Sync for MmapArea<'a, T> {}
 
 #[derive(Debug)]
 pub enum MmapError {
@@ -79,10 +85,12 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
         for i in 0..buf_num {
             let buf: BufMmap<T>;
             unsafe {
-                let ptr = ma.ptr.offset((i * buf_len) as isize);
+                let addr = i as u64 * buf_len as u64;
+                let ptr = ma.ptr.offset(addr as isize);
+
                 buf = BufMmap::<T> {
-                    addr: i as u64,
-                    len: buf_len.try_into().unwrap(), // TODO: Should this start at 0?
+                    addr,
+                    len: 0,
                     data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len),
                     user: Default::default(),
                 };
@@ -92,6 +100,18 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
         }
 
         Ok((ma, bufs))
+    }
+
+    pub fn get_ptr(&self) -> *mut c_void {
+        self.ptr
+    }
+
+    pub fn get_buf_num(&self) -> usize {
+        self.buf_num
+    }
+
+    pub(crate) fn get_buf_len(&self) -> usize {
+        self.buf_len
     }
 }
 
@@ -116,12 +136,12 @@ impl<'a, T: std::default::Default + std::marker::Copy> Drop for MmapArea<'a, T> 
 }
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::convert::TryInto;
+    use std::sync::Arc;
 
     use super::{MmapArea, MmapAreaOptions, MmapError};
-    use crate::buf_pool::BufPool;
     use crate::buf_mmap::BufMmap;
+    use crate::buf_pool::BufPool;
     use crate::buf_pool_vec::BufPoolVec;
 
     #[derive(Default, Copy, Clone, Debug)]
