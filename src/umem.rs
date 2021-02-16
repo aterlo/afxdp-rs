@@ -11,21 +11,23 @@ use std::sync::{Arc, Mutex};
 use crate::buf_mmap::BufMmap;
 use crate::mmap_area::MmapArea;
 
-/// AF_XDP Umem
+/// The Umem is a shared region of memory, backed by MMap, that is shared between userspace and the NIC(s).
+/// Bufs (descriptors) represent packets stored in this area.
 #[derive(Debug)]
 pub struct Umem<'a, T: std::default::Default + std::marker::Copy> {
     pub(crate) area: Arc<MmapArea<'a, T>>,
     pub(crate) umem: Mutex<Box<xsk_umem>>, // TODO - Rethink need for Mutex here
 }
 
-/// Completion queue per Umem
+/// The completion queue is used by the kernel to signal to the application using AF_XDP that the buffer has been
+/// transmitted and is free to be used again.
 #[derive(Debug)]
 pub struct UmemCompletionQueue<'a, T: std::default::Default + std::marker::Copy> {
     umem: Arc<Umem<'a, T>>,
     cq: Box<xsk_ring_cons>,
 }
 
-/// Fill queue per Umem
+/// The fill queue is used to provide the AF_XDP socket (kernel) with buffers where it can write incoming packets.
 #[derive(Debug)]
 pub struct UmemFillQueue<'a, T: std::default::Default + std::marker::Copy> {
     umem: Arc<Umem<'a, T>>,
@@ -38,7 +40,7 @@ pub enum UmemError {
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
-    /// Create a new Umem using the passed memory mapped area
+    /// Create a new Umem using the passed memory mapped area.
     pub fn new(
         area: Arc<MmapArea<'a, T>>,
         completion_ring_size: u32,
@@ -120,7 +122,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Drop for Umem<'a, T> {
 
 impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T> {
     /// After packets have been transmitted, the buffer is returned via the completion queue. The service
-    /// method processed the completion queue.
+    /// method processes the completion queue.
     #[inline]
     pub fn service(
         &mut self,

@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use afxdp::buf_pool::BufPool;
-use afxdp::{buf_mmap::BufMmap, buf_vec::BufVec};
 use afxdp::buf_pool_vec::BufPoolVec;
-use afxdp::mmap_area::{MmapArea, MmapAreaOptions, MmapError};
+use afxdp::buf_vec::BufVec;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
@@ -23,7 +20,7 @@ fn getput<'a>(
 fn test(c: &mut Criterion) {
     let mut bufs = Vec::new();
     for _ in 0..NUM {
-        let buf: BufVec<BufCustom> = BufVec::new(NUM, BufCustom{});
+        let buf: BufVec<BufCustom> = BufVec::new(NUM, BufCustom {});
         bufs.push(buf);
     }
 
@@ -31,9 +28,7 @@ fn test(c: &mut Criterion) {
     let len = bufs.len();
     bufpool.put(&mut bufs, len);
 
-    c.bench_function("getput", |b| {
-        b.iter(|| getput(&mut bufpool, &mut bufs))
-    });
+    c.bench_function("getput", |b| b.iter(|| getput(&mut bufpool, &mut bufs)));
 }
 
 criterion_group!(benches, test);

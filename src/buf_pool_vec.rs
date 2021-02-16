@@ -5,12 +5,20 @@ use crate::buf::Buf;
 use crate::buf_pool::BufPool;
 
 #[derive(Debug)]
-pub struct BufPoolVec<T, U> where T: Buf<U>, U: std::default::Default {
+pub struct BufPoolVec<T, U>
+where
+    T: Buf<U>,
+    U: std::default::Default,
+{
     phantom: PhantomData<U>,
     bufs: Vec<T>,
 }
 
-impl<T, U> BufPoolVec<T, U> where T: Buf<U>, U: std::default::Default {
+impl<T, U> BufPoolVec<T, U>
+where
+    T: Buf<U>,
+    U: std::default::Default,
+{
     pub fn new(capacity: usize) -> BufPoolVec<T, U> {
         BufPoolVec {
             phantom: PhantomData,
@@ -19,7 +27,11 @@ impl<T, U> BufPoolVec<T, U> where T: Buf<U>, U: std::default::Default {
     }
 }
 
-impl<T, U> BufPool<T, U> for BufPoolVec<T,U > where T: Buf<U>, U: std::default::Default {
+impl<T, U> BufPool<T, U> for BufPoolVec<T, U>
+where
+    T: Buf<U>,
+    U: std::default::Default,
+{
     fn get(&mut self, bufs: &mut Vec<T>, num: usize) -> usize {
         let ready = min(num, self.bufs.len());
 

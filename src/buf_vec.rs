@@ -3,13 +3,19 @@ use std::{convert::TryFrom, u16};
 use crate::buf::Buf;
 
 #[derive(Debug, Default)]
-pub struct BufVec<T> where T: std::default::Default {
+pub struct BufVec<T>
+where
+    T: std::default::Default,
+{
     pub(crate) data: Vec<u8>,
     pub(crate) len: u16,
     pub(crate) user: T,
 }
 
-impl<T> BufVec<T> where T: std::default::Default {
+impl<T> BufVec<T>
+where
+    T: std::default::Default,
+{
     pub fn new(capacity: usize, user: T) -> BufVec<T> {
         BufVec {
             data: vec![0; capacity],
@@ -19,7 +25,10 @@ impl<T> BufVec<T> where T: std::default::Default {
     }
 }
 
-impl<T> Buf<T> for BufVec<T> where T: std::default::Default {
+impl<T> Buf<T> for BufVec<T>
+where
+    T: std::default::Default,
+{
     fn get_data(&self) -> &[u8] {
         &self.data[0..]
     }

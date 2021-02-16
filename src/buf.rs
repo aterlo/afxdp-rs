@@ -1,5 +1,10 @@
-/// The Buf trait represents a packet buffer
-pub trait Buf<T> where T: std::default::Default {
+/// The Buf trait represents a packet buffer.
+/// A trait is used so that an implementation can be provided that enables building and testing packet
+/// pipelines without needing the AF_XDP infrastructure.
+pub trait Buf<T>
+where
+    T: std::default::Default,
+{
     /// Returns a reference to the u8 slice of the buffer
     fn get_data(&self) -> &[u8];
 

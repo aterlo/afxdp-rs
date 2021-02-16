@@ -21,7 +21,7 @@ use crate::PENDING_LEN;
 
 const POLL_TIMEOUT: i32 = 1000;
 
-/// An AF_XDP socket
+/// A Rx and Tx AF_XDP socket which is used to receive and transmit packets via AF_XDP.
 #[derive(Debug)]
 pub struct Socket<'a, T: std::default::Default + std::marker::Copy> {
     umem: Arc<Umem<'a, T>>,
@@ -49,7 +49,7 @@ pub enum SocketError {
     Failed,
 }
 
-/// Configuration options for Socket
+/// Configuration options for AF_XDP sockets
 #[derive(Copy, Clone, Debug, Default)]
 pub struct SocketOptions {
     /// Force XDP zero copy mode (XDP_ZEROCOPY flag)
@@ -60,7 +60,14 @@ pub struct SocketOptions {
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
-    // Create a new Rx/Tx AF_XDP socket
+    /// Create a new Rx/Tx AF_XDP socket
+    ///
+    /// # Arguments
+    /// * umem: The Umem the new socket will use
+    /// * queue: The NIC queue/channel this socket will bind to
+    /// * tx_ring_size: The size of the Tx ring
+    /// * rx_ring_size: The size of the Rx ring
+    /// * options: Configuration options
     pub fn new(
         umem: Arc<Umem<'a, T>>,
         if_name: &str,
@@ -133,7 +140,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         Ok((arc, rx, tx))
     }
 
-    // Create a new Rx AF_XDP socket
+    /// Create a new Rx-only AF_XDP socket
     pub fn new_rx(
         umem: Arc<Umem<'a, T>>,
         if_name: &str,
@@ -197,7 +204,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         Ok((arc, rx))
     }
 
-    // Create a new Tx AF_XDP socket
+    /// Create a new Tx-only AF_XDP socket
     pub fn new_tx(
         umem: Arc<Umem<'a, T>>,
         if_name: &str,
@@ -293,6 +300,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
         }
     }
 
+    /// Attempt to receive up to `batch_size` buffers from the socket.
     #[inline]
     pub fn try_recv(
         &mut self,
@@ -360,6 +368,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Drop for SocketRx<'a, T> 
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
+    /// Attempt to send up to `batch_size` buffers on the socket.
     #[inline]
     pub fn try_send(
         &mut self,
@@ -401,6 +410,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
         Ok(ready)
     }
 
+    /// Identify if this socket needs to be woken up (see [AF_XDP docs](https://www.kernel.org/doc/html/latest/networking/af_xdp.html#xdp-use-need-wakeup-bind-flag)).
     pub fn needs_wakeup(&mut self) -> bool {
         let ret;
 

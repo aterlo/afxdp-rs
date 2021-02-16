@@ -3,6 +3,7 @@ use std::fmt;
 
 use crate::buf::Buf;
 
+/// BufMMap is the [Buf](crate::buf::Buf) implementation to be used with AF_XDP sockets (MMapArea, Umem, Socket).
 #[derive(Debug)]
 pub struct BufMmap<'a, T>
 where

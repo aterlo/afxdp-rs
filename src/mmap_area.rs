@@ -9,7 +9,8 @@ use libc::{
 
 use crate::buf_mmap::BufMmap;
 
-/// A mapped memory area used to move packets between the kernel and userspace.
+/// A mapped memory area used to move packets between the kernel and userspace. One or more [Umem](crate::umem::Umem)
+/// instances can share a Mmaparea.
 #[derive(Debug)]
 pub struct MmapArea<'a, T: std::default::Default + std::marker::Copy> {
     phantom: PhantomData<&'a T>,
@@ -103,14 +104,17 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
         Ok((ma, bufs))
     }
 
+    /// Return the ptr to the memory mapped area.
     pub fn get_ptr(&self) -> *mut c_void {
         self.ptr
     }
 
+    /// Get the number of buffers in the memory mapped area.
     pub fn get_buf_num(&self) -> usize {
         self.buf_num
     }
 
+    /// Get the size of the buffers in the memory mapped area.
     pub(crate) fn get_buf_len(&self) -> usize {
         self.buf_len
     }
