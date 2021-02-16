@@ -19,6 +19,7 @@ pub struct MmapArea<'a, T: std::default::Default + std::marker::Copy> {
 }
 // MMapArea is not Send and Sync by default because of the raw pointer (ptr). According to the Rustonomicon,
 // raw pointers are not Send/Sync as a 'lint'. I believe it is safe to mark MmapArea as Sync in this context.
+// Note that the struct fields are private and never change.
 // https://doc.rust-lang.org/nomicon/send-and-sync.html
 // Note that we don't want to wrap MmapArea in an Mutex because we need the ptr to construct BufMMaps as buffers
 // are passed back from the kernel. This happens at very high rates depending on the traffic.

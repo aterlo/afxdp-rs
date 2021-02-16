@@ -17,8 +17,6 @@ pub struct Umem<'a, T: std::default::Default + std::marker::Copy> {
     pub(crate) area: Arc<MmapArea<'a, T>>,
     pub(crate) umem: Mutex<Box<xsk_umem>>, // TODO - Rethink need for Mutex here
 }
-// TODO - Document why this is safe
-unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for Umem<'a, T> {}
 
 /// Completion queue per Umem
 #[derive(Debug)]
@@ -26,7 +24,6 @@ pub struct UmemCompletionQueue<'a, T: std::default::Default + std::marker::Copy>
     umem: Arc<Umem<'a, T>>,
     cq: Box<xsk_ring_cons>,
 }
-unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for UmemCompletionQueue<'a, T> {}
 
 /// Fill queue per Umem
 #[derive(Debug)]
@@ -34,7 +31,6 @@ pub struct UmemFillQueue<'a, T: std::default::Default + std::marker::Copy> {
     umem: Arc<Umem<'a, T>>,
     fq: Box<xsk_ring_prod>,
 }
-unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for UmemFillQueue<'a, T> {}
 
 #[derive(Debug)]
 pub enum UmemError {

@@ -20,13 +20,13 @@ use crate::umem::Umem;
 use crate::PENDING_LEN;
 
 const POLL_TIMEOUT: i32 = 1000;
+
 /// An AF_XDP socket
 #[derive(Debug)]
 pub struct Socket<'a, T: std::default::Default + std::marker::Copy> {
     umem: Arc<Umem<'a, T>>,
     socket: Box<xsk_socket>,
 }
-unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for Socket<'a, T> {}
 
 /// A Rx only AF_XDP socket
 #[derive(Debug)]
@@ -35,7 +35,6 @@ pub struct SocketRx<'a, T: std::default::Default + std::marker::Copy> {
     fd: std::os::raw::c_int,
     rx: Box<xsk_ring_cons>,
 }
-unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for SocketRx<'a, T> {}
 
 /// A Tx only AF_XDP socket
 #[derive(Debug)]
@@ -44,7 +43,6 @@ pub struct SocketTx<'a, T: std::default::Default + std::marker::Copy> {
     pub fd: std::os::raw::c_int,
     tx: Box<xsk_ring_prod>,
 }
-unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for SocketTx<'a, T> {}
 
 #[derive(Debug)]
 pub enum SocketError {
