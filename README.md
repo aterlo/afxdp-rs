@@ -6,7 +6,7 @@ This module provides a Rust interface for AF_XDP which wraps [libbpf](https://gi
 
 [![docs.rs](https://docs.rs/afxdp/badge.svg)](https://docs.rs/crate/afxdp)
 
-AF_XDP:
+AF_XDP (XSK):
 
 * <https://www.kernel.org/doc/html/latest/networking/af_xdp.html>
 * <https://lwn.net/Articles/750845/>
