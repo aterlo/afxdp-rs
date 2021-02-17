@@ -19,7 +19,7 @@ use crate::buf_mmap::BufMmap;
 use crate::umem::Umem;
 use crate::PENDING_LEN;
 
-const POLL_TIMEOUT: i32 = 1000;
+const POLL_TIMEOUT: i32 = 1000; // why isn't this 0? Don't want to sleep at all do we?
 
 /// A Rx and Tx AF_XDP socket which is used to receive and transmit packets via AF_XDP.
 #[derive(Debug)]
@@ -444,7 +444,9 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
                     let errno = errno().0;
                     match errno {
                         ENOBUFS | EAGAIN | EBUSY | ENETDOWN => {
-                            // These error codes are OK according to the kernel xdpsock_user example
+                            // These error codes are OK according to the kernel xdpsock_user example.
+                            // Note that EAGAIN may need to be handled differently for SKB XSK sockets.
+                            // https://lore.kernel.org/netdev/6e58cde8-9e38-079a-589d-7b7a860ef61e@iogearbox.net/T/
                         }
                         _ => panic!("xdpsock_user.c sample panics here"),
                     }
