@@ -20,7 +20,7 @@ use crate::umem::Umem;
 use crate::util;
 use crate::PENDING_LEN;
 
-const POLL_TIMEOUT: i32 = 1000; // why isn't this 0? Don't want to sleep at all do we?
+const POLL_TIMEOUT: i32 = 0; // Busy polling
 
 /// A Rx and Tx AF_XDP socket which is used to receive and transmit packets via AF_XDP.
 #[derive(Debug)]
