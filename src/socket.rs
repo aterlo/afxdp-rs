@@ -1,6 +1,7 @@
 use std::cmp::min;
 use std::convert::TryInto;
 use std::ffi::CString;
+use std::sync::Arc;
 
 use arraydeque::{ArrayDeque, Wrapping};
 use errno::errno;
@@ -10,13 +11,13 @@ use libbpf_sys::{
     _xsk_ring_prod__tx_desc, xdp_desc, xsk_ring_cons, xsk_ring_prod, xsk_socket,
     xsk_socket__create, xsk_socket__delete, xsk_socket__fd, xsk_socket_config, XDP_COPY,
     XDP_FLAGS_UPDATE_IF_NOEXIST, XDP_USE_NEED_WAKEUP, XDP_ZEROCOPY,
-    XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD,
 };
 use libc::{poll, pollfd, sendto, EAGAIN, EBUSY, ENETDOWN, ENOBUFS, MSG_DONTWAIT, POLLIN};
-use std::sync::Arc;
+use thiserror::Error;
 
 use crate::buf_mmap::BufMmap;
 use crate::umem::Umem;
+use crate::util;
 use crate::PENDING_LEN;
 
 const POLL_TIMEOUT: i32 = 1000; // why isn't this 0? Don't want to sleep at all do we?
@@ -26,6 +27,7 @@ const POLL_TIMEOUT: i32 = 1000; // why isn't this 0? Don't want to sleep at all 
 pub struct Socket<'a, T: std::default::Default + std::marker::Copy> {
     umem: Arc<Umem<'a, T>>,
     socket: Box<xsk_socket>,
+    if_name_c: CString,
 }
 
 /// A Rx only AF_XDP socket
@@ -40,8 +42,16 @@ pub struct SocketRx<'a, T: std::default::Default + std::marker::Copy> {
 #[derive(Debug)]
 pub struct SocketTx<'a, T: std::default::Default + std::marker::Copy> {
     socket: Arc<Socket<'a, T>>,
-    pub fd: std::os::raw::c_int,
+    fd: std::os::raw::c_int,
     tx: Box<xsk_ring_prod>,
+}
+
+#[derive(Debug, Error)]
+pub enum SocketNewError {
+    #[error("socket create failed: {0}")]
+    Create(std::io::Error),
+    #[error("socket ring size not a power of two")]
+    RingNotPowerOfTwo,
 }
 
 #[derive(Debug)]
@@ -57,6 +67,12 @@ pub struct SocketOptions {
 
     /// Force XDP copy mode (XDP_COPY flag)
     pub copy_mode: bool,
+
+    /// Tx ring size (must be a power of two)
+    pub tx_ring_size: u32,
+
+    /// Rx ring size (must be a power of two)
+    pub rx_ring_size: u32,
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
@@ -75,7 +91,13 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         rx_ring_size: u32,
         tx_ring_size: u32,
         options: SocketOptions,
-    ) -> Result<(Arc<Socket<'a, T>>, SocketRx<'a, T>, SocketTx<'a, T>), SocketError> {
+    ) -> Result<(Arc<Socket<'a, T>>, SocketRx<'a, T>, SocketTx<'a, T>), SocketNewError> {
+        // Verify that the passed ring sizes are a power of two.
+        // https://www.kernel.org/doc/html/latest/networking/af_xdp.html
+        if !util::is_pow_of_two(rx_ring_size) || !util::is_pow_of_two(tx_ring_size) {
+            return Err(SocketNewError::RingNotPowerOfTwo);
+        }
+
         let mut cfg = xsk_socket_config {
             rx_size: rx_ring_size,
             tx_size: tx_ring_size,
@@ -116,24 +138,25 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         }
 
         if ret != 0 {
-            println!("socket err: {}", ret);
-
-            return Err(SocketError::Failed);
+            return Err(SocketNewError::Create(std::io::Error::from_raw_os_error(
+                ret,
+            )));
         }
 
         let arc = Arc::new(Socket {
-            umem: umem,
+            umem,
             socket: unsafe { Box::from_raw(*xsk_ptr) },
+            if_name_c,
         });
 
         let rx = SocketRx {
             socket: arc.clone(),
             fd: unsafe { xsk_socket__fd(*xsk_ptr) },
-            rx: rx,
+            rx,
         };
         let tx = SocketTx {
             socket: arc.clone(),
-            tx: tx,
+            tx,
             fd: unsafe { xsk_socket__fd(*xsk_ptr) },
         };
 
@@ -147,7 +170,13 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         queue: usize,
         rx_ring_size: u32,
         options: SocketOptions,
-    ) -> Result<(Arc<Socket<'a, T>>, SocketRx<'a, T>), SocketError> {
+    ) -> Result<(Arc<Socket<'a, T>>, SocketRx<'a, T>), SocketNewError> {
+        // Verify that the passed ring size is a power of two.
+        // https://www.kernel.org/doc/html/latest/networking/af_xdp.html
+        if !util::is_pow_of_two(rx_ring_size) {
+            return Err(SocketNewError::RingNotPowerOfTwo);
+        }
+
         let mut cfg = xsk_socket_config {
             rx_size: rx_ring_size,
             tx_size: 0,
@@ -187,18 +216,21 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         }
 
         if ret != 0 {
-            return Err(SocketError::Failed);
+            return Err(SocketNewError::Create(std::io::Error::from_raw_os_error(
+                ret,
+            )));
         }
 
         let arc = Arc::new(Socket {
-            umem: umem,
+            umem,
             socket: unsafe { Box::from_raw(*xsk_ptr) },
+            if_name_c,
         });
 
         let rx = SocketRx {
             socket: arc.clone(),
             fd: unsafe { xsk_socket__fd(*xsk_ptr) },
-            rx: rx,
+            rx,
         };
 
         Ok((arc, rx))
@@ -211,13 +243,19 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         queue: usize,
         tx_ring_size: u32,
         options: SocketOptions,
-    ) -> Result<(Arc<Socket<'a, T>>, SocketTx<'a, T>), SocketError> {
+    ) -> Result<(Arc<Socket<'a, T>>, SocketTx<'a, T>), SocketNewError> {
+        // Verify that the passed ring size is a power of two.
+        // https://www.kernel.org/doc/html/latest/networking/af_xdp.html
+        if !util::is_pow_of_two(tx_ring_size) {
+            return Err(SocketNewError::RingNotPowerOfTwo);
+        }
+
         let mut cfg = xsk_socket_config {
             rx_size: 0,
             tx_size: tx_ring_size,
             xdp_flags: XDP_FLAGS_UPDATE_IF_NOEXIST,
             bind_flags: XDP_USE_NEED_WAKEUP as u16,
-            libbpf_flags: XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD,
+            libbpf_flags: 0,
         };
 
         if options.zero_copy_mode {
@@ -251,12 +289,15 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         }
 
         if ret != 0 {
-            return Err(SocketError::Failed);
+            return Err(SocketNewError::Create(std::io::Error::from_raw_os_error(
+                ret,
+            )));
         }
 
         let arc = Arc::new(Socket {
             umem,
             socket: unsafe { Box::from_raw(*xsk_ptr) },
+            if_name_c,
         });
 
         let tx = SocketTx {
@@ -272,6 +313,8 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
 impl<'a, T: std::default::Default + std::marker::Copy> Drop for Socket<'a, T> {
     fn drop(&mut self) {
         unsafe {
+            // No null pointer check here because it is initialized to null and if the create fails,
+            // it should still be null and xsk_socket__delete handles null.
             xsk_socket__delete(self.socket.as_mut());
         }
     }
@@ -463,5 +506,153 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
 impl<'a, T: std::default::Default + std::marker::Copy> Drop for SocketTx<'a, T> {
     fn drop(&mut self) {
         // Cleanup is in the parent Socket
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::buf_mmap::BufMmap;
+    use crate::mmap_area::{MmapArea, MmapAreaOptions, MmapError};
+    use crate::socket::{Socket, SocketNewError, SocketOptions};
+    use crate::umem::Umem;
+
+    #[derive(Default, Copy, Clone, Debug)]
+    struct BufCustom {}
+
+    // Test the ring size constraints during socket creation
+    #[test]
+    fn ring_size1() {
+        use rlimit::{setrlimit, Resource, Rlim};
+        use std::io;
+        use std::io::Write;
+
+        let r = setrlimit(Resource::MEMLOCK, Rlim::INFINITY, Rlim::INFINITY);
+        match r {
+            Err(_) => {
+                writeln!(
+                    &mut io::stdout(),
+                    "Test skipped as it needs to be run as root"
+                )
+                .unwrap();
+                return;
+            }
+            Ok(_) => {
+                // Expected
+            }
+        }
+
+        const BUF_NUM: usize = 1024;
+        const BUF_LEN: usize = 2048;
+
+        let options = MmapAreaOptions { huge_tlb: false };
+        let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
+            MmapArea::new(BUF_NUM, BUF_LEN, options);
+
+        let (area, _) = match r {
+            Ok((area, buf_pool)) => (area, buf_pool),
+            Err(err) => panic!("{:?}", err),
+        };
+
+        let r = Umem::new(area, 1024, 1024);
+        let (umem, _cq, _fillq) = match r {
+            Err(err) => {
+                panic!("{}", err)
+            }
+            Ok((umem, cq, fq)) => (umem, cq, fq),
+        };
+
+        let options = SocketOptions::default();
+
+        // With both rings set to a power of two, this should fail with a non power of two error.
+        let mut rx_ring_size: u32 = 2048;
+        let mut tx_ring_size: u32 = 2048;
+
+        let r = Socket::new(
+            umem.clone(),
+            "link1",
+            1,
+            rx_ring_size,
+            tx_ring_size,
+            options,
+        );
+        match r {
+            Err(SocketNewError::RingNotPowerOfTwo) => {
+                panic!("this error should not have have been returned");
+            }
+            Err(_) => {
+                // Expected
+            }
+            Ok(_) => {
+                panic!("socket creation should have failed")
+            }
+        }
+
+        // With the first not a power of two, it should fail.
+        rx_ring_size = 101;
+        tx_ring_size = 2048;
+
+        let r = Socket::new(
+            umem.clone(),
+            "link1",
+            1,
+            rx_ring_size,
+            tx_ring_size,
+            options,
+        );
+        match r {
+            Err(SocketNewError::RingNotPowerOfTwo) => {
+                // Expected
+            }
+            Err(err) => panic!("wrong error: {:?}", err),
+            Ok(_) => {
+                panic!("socket creation should have failed");
+            }
+        }
+
+        // With the second not a power of two, it should fail.
+        rx_ring_size = 2048;
+        tx_ring_size = 149;
+
+        let r = Socket::new(
+            umem.clone(),
+            "link1",
+            1,
+            rx_ring_size,
+            tx_ring_size,
+            options,
+        );
+        match r {
+            Err(SocketNewError::RingNotPowerOfTwo) => {
+                // Expected
+            }
+            Err(err) => panic!("wrong error: {:?}", err),
+            Ok(_) => {
+                panic!("socket creation should have failed");
+            }
+        }
+
+        // With both not a power of two it should fail.
+        rx_ring_size = 1999;
+        tx_ring_size = 149;
+
+        let r = Socket::new(
+            umem.clone(),
+            "link1",
+            1,
+            rx_ring_size,
+            tx_ring_size,
+            options,
+        );
+        match r {
+            Err(SocketNewError::RingNotPowerOfTwo) => {
+                // Expected
+            }
+            Err(err) => panic!("wrong error: {:?}", err),
+            Ok(_) => {
+                panic!("socket creation should have failed");
+            }
+        }
     }
 }

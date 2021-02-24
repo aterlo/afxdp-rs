@@ -1,4 +1,7 @@
+use std::sync::{Arc, Mutex};
 use std::{cmp::min, u64};
+
+use thiserror::Error;
 
 use libbpf_sys::{
     _xsk_ring_cons__comp_addr, _xsk_ring_cons__peek, _xsk_ring_cons__release,
@@ -6,10 +9,10 @@ use libbpf_sys::{
     _xsk_ring_prod__submit, xsk_ring_cons, xsk_ring_prod, xsk_umem, xsk_umem__create,
     xsk_umem__delete, xsk_umem_config, XSK_UMEM__DEFAULT_FRAME_HEADROOM,
 };
-use std::sync::{Arc, Mutex};
 
 use crate::buf_mmap::BufMmap;
 use crate::mmap_area::MmapArea;
+use crate::util;
 
 /// The Umem is a shared region of memory, backed by MMap, that is shared between userspace and the NIC(s).
 /// Bufs (descriptors) represent packets stored in this area.
@@ -34,8 +37,17 @@ pub struct UmemFillQueue<'a, T: std::default::Default + std::marker::Copy> {
     fq: Box<xsk_ring_prod>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+pub enum UmemNewError {
+    #[error("umem create failed: {0}")]
+    Create(std::io::Error),
+    #[error("umem ring size not a power of two")]
+    RingNotPowerOfTwo,
+}
+
+#[derive(Debug, Error)]
 pub enum UmemError {
+    #[error("failed")]
     Failed,
 }
 
@@ -51,8 +63,14 @@ impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
             UmemCompletionQueue<'a, T>,
             UmemFillQueue<'a, T>,
         ),
-        UmemError,
+        UmemNewError,
     > {
+        // Verify that the passed ring sizes are a power of two.
+        // https://www.kernel.org/doc/html/latest/networking/af_xdp.html
+        if !util::is_pow_of_two(completion_ring_size) || !util::is_pow_of_two(fill_ring_size) {
+            return Err(UmemNewError::RingNotPowerOfTwo);
+        }
+
         let cfg = xsk_umem_config {
             fill_size: fill_ring_size,
             comp_size: completion_ring_size,
@@ -77,8 +95,9 @@ impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
         let umem_ptr: *mut *mut xsk_umem = &mut umem;
 
         let ret: std::os::raw::c_int;
+        let size = (area.get_buf_num() * area.get_buf_len()) as u64;
+
         unsafe {
-            let size = (area.get_buf_num() * area.get_buf_len()) as u64;
             ret = xsk_umem__create(
                 umem_ptr,
                 area.get_ptr(),
@@ -90,7 +109,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
         }
 
         if ret != 0 {
-            return Err(UmemError::Failed);
+            return Err(UmemNewError::Create(std::io::Error::from_raw_os_error(ret)));
         }
 
         let arc = Arc::new(Umem {
@@ -229,4 +248,149 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemFillQueue<'a, T> {
 
 impl<'a, T: std::default::Default + std::marker::Copy> Drop for UmemFillQueue<'a, T> {
     fn drop(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::buf_mmap::BufMmap;
+    use crate::mmap_area::{MmapArea, MmapAreaOptions, MmapError};
+    use crate::umem::{Umem, UmemNewError};
+
+    #[derive(Default, Copy, Clone, Debug)]
+    struct BufCustom {}
+
+    // Test with neither ring size as a power of two
+    #[test]
+    fn ring_size1() {
+        const BUF_NUM: usize = 1024;
+        const BUF_LEN: usize = 2048;
+
+        let options = MmapAreaOptions { huge_tlb: false };
+        let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
+            MmapArea::new(BUF_NUM, BUF_LEN, options);
+
+        let (area, _) = match r {
+            Ok((area, buf_pool)) => (area, buf_pool),
+            Err(err) => panic!("{:?}", err),
+        };
+
+        let r = Umem::new(area, 97, 997);
+        match r {
+            Err(UmemNewError::RingNotPowerOfTwo) => {
+                // Expected
+            }
+            Err(err) => {
+                panic!("wrong error: {}", err);
+            }
+            Ok(_) => {
+                panic!("no error");
+            }
+        }
+    }
+
+    // Test with the first ring size not power of two and second as power of two
+    #[test]
+    fn ring_size2() {
+        const BUF_NUM: usize = 1024;
+        const BUF_LEN: usize = 2048;
+
+        let options = MmapAreaOptions { huge_tlb: false };
+        let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
+            MmapArea::new(BUF_NUM, BUF_LEN, options);
+
+        let (area, _) = match r {
+            Ok((area, buf_pool)) => (area, buf_pool),
+            Err(err) => panic!("{:?}", err),
+        };
+
+        let r = Umem::new(area, 100, 1024);
+        match r {
+            Err(UmemNewError::RingNotPowerOfTwo) => {
+                // Expected
+            }
+            Err(err) => {
+                panic!("wrong error: {}", err);
+            }
+            Ok(_) => {
+                panic!("no error");
+            }
+        }
+    }
+
+    // Test with the first ring size as a power of two and the second not
+    #[test]
+    fn ring_size3() {
+        const BUF_NUM: usize = 1024;
+        const BUF_LEN: usize = 2048;
+
+        let options = MmapAreaOptions { huge_tlb: false };
+        let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
+            MmapArea::new(BUF_NUM, BUF_LEN, options);
+
+        let (area, _) = match r {
+            Ok((area, buf_pool)) => (area, buf_pool),
+            Err(err) => panic!("{:?}", err),
+        };
+
+        let r = Umem::new(area, 1024, 100);
+        match r {
+            Err(UmemNewError::RingNotPowerOfTwo) => {
+                // Expected
+            }
+            Err(err) => {
+                panic!("wrong error: {}", err);
+            }
+            Ok(_) => {
+                panic!("no error");
+            }
+        }
+    }
+
+    // Test with both ring sizes as a power of two
+    // Note that Umem and AF_XDP in general required the locked memory to be increased to work
+    #[test]
+    fn ring_size4() {
+        use rlimit::{setrlimit, Resource, Rlim};
+        use std::io;
+        use std::io::Write;
+
+        let r = setrlimit(Resource::MEMLOCK, Rlim::INFINITY, Rlim::INFINITY);
+        match r {
+            Err(_) => {
+                writeln!(
+                    &mut io::stdout(),
+                    "Test skipped as it needs to be run as root"
+                )
+                .unwrap();
+                return;
+            }
+            Ok(_) => {
+                // Expected
+            }
+        }
+
+        const BUF_NUM: usize = 1024;
+        const BUF_LEN: usize = 2048;
+
+        let options = MmapAreaOptions { huge_tlb: false };
+        let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
+            MmapArea::new(BUF_NUM, BUF_LEN, options);
+
+        let (area, _) = match r {
+            Ok((area, buf_pool)) => (area, buf_pool),
+            Err(err) => panic!("{:?}", err),
+        };
+
+        let r = Umem::new(area, 1024, 1024);
+        match r {
+            Err(err) => {
+                panic!("error: {}", err);
+            }
+            Ok(_) => {
+                // Expected
+            }
+        }
+    }
 }
