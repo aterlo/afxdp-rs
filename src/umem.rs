@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::{cmp::min, u64};
 
 use thiserror::Error;
@@ -19,7 +19,7 @@ use crate::util;
 #[derive(Debug)]
 pub struct Umem<'a, T: std::default::Default + std::marker::Copy> {
     pub(crate) area: Arc<MmapArea<'a, T>>,
-    pub(crate) umem: Mutex<Box<xsk_umem>>, // TODO - Rethink need for Mutex here
+    pub(crate) umem: Box<xsk_umem>,
 }
 
 /// The completion queue is used by the kernel to signal to the application using AF_XDP that the buffer has been
@@ -114,7 +114,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
 
         let arc = Arc::new(Umem {
             area,
-            umem: Mutex::new(unsafe { Box::from_raw(*umem_ptr) }),
+            umem: unsafe { Box::from_raw(*umem_ptr) },
         });
 
         let cq = UmemCompletionQueue {
@@ -128,13 +128,17 @@ impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
 
         Ok((arc, cq, fq))
     }
+
+    pub fn get_ptr(&self) -> *const xsk_umem {
+        self.umem.as_ref() as *const xsk_umem
+    }
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> Drop for Umem<'a, T> {
     fn drop(&mut self) {
         // TODO Does this need to test for null too?
         unsafe {
-            xsk_umem__delete(self.umem.lock().unwrap().as_mut());
+            xsk_umem__delete(self.umem.as_mut());
         }
     }
 }
