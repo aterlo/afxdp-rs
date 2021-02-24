@@ -217,7 +217,10 @@ fn do_worker(
     );
     let (_skt1, skt1rx, skt1tx) = match r {
         Ok(skt) => skt,
-        Err(err) => panic!("Failed to create socket: {:?}", err),
+        Err(err) => panic!(
+            "Failed to create socket for {}:{} - {:?}",
+            &config.link1_name, config.link1_channel, err
+        ),
     };
 
     let r = Socket::new(
@@ -230,7 +233,10 @@ fn do_worker(
     );
     let (_skt2, skt2rx, skt2tx) = match r {
         Ok(skt) => skt,
-        Err(err) => panic!("Failed to create socket: {:?}", err),
+        Err(err) => panic!(
+            "Failed to create socket for {}:{} - {:?}",
+            &config.link2_name, config.link2_channel, err
+        ),
     };
 
     let initial_fill_num: usize = RING_SIZE as usize;
