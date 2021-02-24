@@ -145,44 +145,50 @@ mod tests {
     use std::sync::Arc;
 
     use super::{MmapArea, MmapAreaOptions, MmapError};
+    use crate::buf::Buf;
     use crate::buf_mmap::BufMmap;
-    use crate::buf_pool::BufPool;
-    use crate::buf_pool_vec::BufPoolVec;
 
     #[derive(Default, Copy, Clone, Debug)]
     struct BufCustom {}
 
+    /// Test that bufs ends up with the correct number of buffers and each is the correct length
     #[test]
     fn bufs_to_pool() {
-        const BUF_NUM: usize = 10;
+        const BUF_NUM: usize = 111;
+        const BUF_LEN: usize = 12;
 
         let options = MmapAreaOptions { huge_tlb: false };
         let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
-            MmapArea::new(BUF_NUM, 8, options);
+            MmapArea::new(BUF_NUM, BUF_LEN, options);
 
-        let (area, mut bufs) = match r {
+        let (area, bufs) = match r {
             Ok((area, bufs)) => (area, bufs),
             Err(err) => panic!("{:?}", err),
         };
 
         assert_eq!(area.buf_num, BUF_NUM);
-        assert_eq!(area.buf_len, 8);
+        assert_eq!(area.buf_len, BUF_LEN);
         assert_eq!(bufs.len(), BUF_NUM);
 
-        let mut pool = BufPoolVec::new(BUF_NUM);
-
-        let r = pool.put(&mut bufs, area.buf_num);
-        assert_eq!(r, BUF_NUM);
-        assert_eq!(pool.len(), BUF_NUM);
+        for buf in bufs {
+            if buf.get_data().len() != BUF_LEN {
+                panic!(
+                    "expected buf len {} found {}",
+                    BUF_LEN,
+                    buf.get_data().len()
+                );
+            }
+        }
     }
 
     #[test]
     fn buf_values() {
         const BUF_NUM: usize = 88;
+        const BUF_LEN: usize = 8;
 
         let options = MmapAreaOptions { huge_tlb: false };
         let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
-            MmapArea::new(BUF_NUM, 8, options);
+            MmapArea::new(BUF_NUM, BUF_LEN, options);
 
         let (area, mut bufs) = match r {
             Ok((area, buf_pool)) => (area, buf_pool),
@@ -190,7 +196,7 @@ mod tests {
         };
 
         assert_eq!(area.buf_num, BUF_NUM);
-        assert_eq!(area.buf_len, 8);
+        assert_eq!(area.buf_len, BUF_LEN);
         assert_eq!(bufs.len(), BUF_NUM);
 
         //
