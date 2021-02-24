@@ -8,6 +8,7 @@ use libc::{
 };
 
 use crate::buf_mmap::BufMmap;
+use crate::AF_XDP_RESERVED;
 
 /// A mapped memory area used to move packets between the kernel and userspace. One or more [Umem](crate::umem::Umem)
 /// instances can share a Mmaparea.
@@ -83,6 +84,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
 
         // Create the bufs
         let mut bufs = Vec::with_capacity(buf_num);
+        let buf_len_available = buf_len - AF_XDP_RESERVED as usize;
 
         for i in 0..buf_num {
             let buf: BufMmap<T>;
@@ -91,9 +93,9 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
                 let ptr = ma.ptr.offset(addr as isize);
 
                 buf = BufMmap::<T> {
-                    addr,
+                    addr: addr + AF_XDP_RESERVED,
                     len: 0,
-                    data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len),
+                    data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len_available),
                     user: Default::default(),
                 };
             }

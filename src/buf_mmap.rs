@@ -40,6 +40,10 @@ where
     }
 
     fn set_len(&mut self, len: u16) {
+        if len > self.get_capacity() {
+            panic!("len too large {} vs {}", len, self.get_capacity());
+        }
+
         self.len = len;
     }
 
@@ -59,9 +63,10 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "BufMMap addr={} len={} data={:?}",
+            "BufMMap addr={} len={} capacity={} data={:?}",
             self.addr,
             self.len,
+            self.get_capacity(),
             &(self.data[0]) as *const u8
         )
     }

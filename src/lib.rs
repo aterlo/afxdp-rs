@@ -33,3 +33,7 @@ mod util;
 
 /// PENDING_LEN is the size of the circular buffer used when reading from and writing to the socket.
 pub const PENDING_LEN: usize = 4096;
+
+/// AF_XDP_RESERVED is the number of bytes reserved at the front of the buffer for the driver. Note this is different
+/// from user configurable headroom.
+pub(crate) const AF_XDP_RESERVED: u64 = 256;

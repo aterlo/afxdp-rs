@@ -15,10 +15,10 @@ use libbpf_sys::{
 use libc::{poll, pollfd, sendto, EAGAIN, EBUSY, ENETDOWN, ENOBUFS, MSG_DONTWAIT, POLLIN};
 use thiserror::Error;
 
-use crate::buf_mmap::BufMmap;
 use crate::umem::Umem;
 use crate::util;
 use crate::PENDING_LEN;
+use crate::{buf_mmap::BufMmap, AF_XDP_RESERVED};
 
 const POLL_TIMEOUT: i32 = 0; // Busy polling
 
@@ -363,7 +363,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
             return Ok(0);
         }
 
-        let buf_len = self.socket.umem.area.get_buf_len();
+        let buf_len_available = self.socket.umem.area.get_buf_len() - AF_XDP_RESERVED as usize;
 
         for _ in 0..rcvd {
             let desc: *const xdp_desc;
@@ -378,7 +378,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
                 b = BufMmap {
                     addr,
                     len,
-                    data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len),
+                    data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len_available),
                     user,
                 };
             }

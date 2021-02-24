@@ -13,6 +13,7 @@ use libbpf_sys::{
 use crate::buf_mmap::BufMmap;
 use crate::mmap_area::MmapArea;
 use crate::util;
+use crate::AF_XDP_RESERVED;
 
 /// The Umem is a shared region of memory, backed by MMap, that is shared between userspace and the NIC(s).
 /// Bufs (descriptors) represent packets stored in this area.
@@ -163,7 +164,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T
             return Ok(0);
         }
 
-        let buf_len = self.umem.area.get_buf_len();
+        let buf_len_available = self.umem.area.get_buf_len() - AF_XDP_RESERVED as usize;
 
         for _ in 0..ready {
             let buf: BufMmap<T>;
@@ -174,9 +175,9 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T
                 idx += 1;
 
                 buf = BufMmap {
-                    addr: *addr,
+                    addr: *addr + AF_XDP_RESERVED,
                     len: 0,
-                    data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len as usize),
+                    data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len_available),
                     user: Default::default(),
                 };
             }

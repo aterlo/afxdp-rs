@@ -34,7 +34,6 @@ where
     }
 
     fn get_data_mut(&mut self) -> &mut [u8] {
-        println!("len {}", self.data[0..].len());
         &mut self.data[0..]
     }
 
