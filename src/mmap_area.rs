@@ -149,6 +149,7 @@ mod tests {
     use super::{MmapArea, MmapAreaOptions, MmapError};
     use crate::buf::Buf;
     use crate::buf_mmap::BufMmap;
+    use crate::AF_XDP_RESERVED;
 
     #[derive(Default, Copy, Clone, Debug)]
     struct BufCustom {}
@@ -156,8 +157,8 @@ mod tests {
     /// Test that bufs ends up with the correct number of buffers and each is the correct length
     #[test]
     fn bufs_to_pool() {
-        const BUF_NUM: usize = 111;
-        const BUF_LEN: usize = 12;
+        const BUF_NUM: usize = 1024;
+        const BUF_LEN: usize = 2048;
 
         let options = MmapAreaOptions { huge_tlb: false };
         let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
@@ -173,7 +174,7 @@ mod tests {
         assert_eq!(bufs.len(), BUF_NUM);
 
         for buf in bufs {
-            if buf.get_data().len() != BUF_LEN {
+            if buf.get_data().len() != BUF_LEN - AF_XDP_RESERVED as usize {
                 panic!(
                     "expected buf len {} found {}",
                     BUF_LEN,
@@ -185,8 +186,8 @@ mod tests {
 
     #[test]
     fn buf_values() {
-        const BUF_NUM: usize = 88;
-        const BUF_LEN: usize = 8;
+        const BUF_NUM: usize = 1024;
+        const BUF_LEN: usize = 2048;
 
         let options = MmapAreaOptions { huge_tlb: false };
         let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
