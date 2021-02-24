@@ -108,18 +108,17 @@ fn main() {
     } else {
         options = MmapAreaOptions { huge_tlb: false };
     }
-    let r: Result<
-        (
-            std::sync::Arc<MmapArea<BufCustom>>,
-            Vec<BufMmap<BufCustom>>,
-        ),
-        MmapError,
-    > = MmapArea::new(opt.bufnum, opt.bufsize, options);
+    let r: Result<(std::sync::Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
+        MmapArea::new(opt.bufnum, opt.bufsize, options);
     let (area, mut bufs) = match r {
         Ok((area, bufs)) => (area, bufs),
         Err(err) => panic!("Failed to create MmapArea: {:?}", err),
     };
-    println!("Created MmapArea with {} buffers of size {}", bufs.len(), opt.bufsize);
+    println!(
+        "Created MmapArea with {} buffers of size {}",
+        bufs.len(),
+        opt.bufsize
+    );
 
     let r = Umem::new(area.clone(), RING_SIZE, RING_SIZE);
     let (umem1, umem1cq, mut umem1fq) = match r {
@@ -274,7 +273,7 @@ fn main() {
         //
         let r = forward(&mut state[other].tx, &mut pending[pos]);
         match r {
-            Ok(n) => stats[pos].tx_packets += n,
+            Ok(n) => stats[other].tx_packets += n,
             Err(err) => println!("error: {:?}", err),
         }
 

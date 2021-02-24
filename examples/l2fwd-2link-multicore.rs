@@ -390,7 +390,7 @@ fn do_worker(
             //
             let r = forward(&mut state[other].tx, &mut pending[pos]);
             match r {
-                Ok(n) => stats[pos].tx_packets += n,
+                Ok(n) => stats[other].tx_packets += n,
                 Err(err) => println!("error: {:?}", err),
             }
 
