@@ -184,6 +184,7 @@ mod tests {
         }
     }
 
+    // Test writing and reading multi-byte values at the start of each buf
     #[test]
     fn buf_values() {
         const BUF_NUM: usize = 1024;
@@ -227,6 +228,44 @@ mod tests {
             let val2 = u64::from_ne_bytes(int_bytes.try_into().unwrap());
 
             assert_eq!(val, val2);
+        }
+    }
+
+    // Test writing and reading from each byte of each buf
+    #[test]
+    fn buf_values2() {
+        const BUF_NUM: usize = 256;
+        const BUF_LEN: usize = 2048;
+
+        let options = MmapAreaOptions { huge_tlb: false };
+        let r: Result<(Arc<MmapArea<BufCustom>>, Vec<BufMmap<BufCustom>>), MmapError> =
+            MmapArea::new(BUF_NUM, BUF_LEN, options);
+
+        let (area, mut bufs) = match r {
+            Ok((area, buf_pool)) => (area, buf_pool),
+            Err(err) => panic!("{:?}", err),
+        };
+
+        assert_eq!(area.buf_num, BUF_NUM);
+        assert_eq!(area.buf_len, BUF_LEN);
+        assert_eq!(bufs.len(), BUF_NUM);
+
+        //
+        // Write the buf number into every byte of each buf
+        //
+        for (i, buf) in bufs.iter_mut().enumerate() {
+            for j in 0..BUF_LEN - AF_XDP_RESERVED as usize {
+                buf.data[j] = i as u8;
+            }
+        }
+
+        //
+        // Validate that the buf number is present in every byte of each buf
+        //
+        for (i, buf) in bufs.iter_mut().enumerate() {
+            for j in 0..BUF_LEN - AF_XDP_RESERVED as usize {
+                assert_eq!(buf.data[j], i as u8);
+            }
         }
     }
 }
