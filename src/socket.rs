@@ -37,6 +37,10 @@ pub struct SocketRx<'a, T: std::default::Default + std::marker::Copy> {
     fd: std::os::raw::c_int,
     rx: Box<xsk_ring_cons>,
 }
+// SocketRx is not Send by default because of the *mut u32 in xsk_ring_cons. According to the Rustonomicon,
+// raw pointers are not Send/Sync as a 'lint'. I believe it is safe to mark MmapArea as Sync in this context.
+// https://doc.rust-lang.org/nomicon/send-and-sync.html
+unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for SocketRx<'a, T> {}
 
 /// A Tx only AF_XDP socket
 #[derive(Debug)]
@@ -45,6 +49,10 @@ pub struct SocketTx<'a, T: std::default::Default + std::marker::Copy> {
     fd: std::os::raw::c_int,
     tx: Box<xsk_ring_prod>,
 }
+// SocketTx is not Send by default because of the *mut u32 in xsk_ring_prod. According to the Rustonomicon,
+// raw pointers are not Send/Sync as a 'lint'. I believe it is safe to mark MmapArea as Sync in this context.
+// https://doc.rust-lang.org/nomicon/send-and-sync.html
+unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for SocketTx<'a, T> {}
 
 #[derive(Debug, Error)]
 pub enum SocketNewError {

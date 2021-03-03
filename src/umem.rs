@@ -30,6 +30,10 @@ pub struct UmemCompletionQueue<'a, T: std::default::Default + std::marker::Copy>
     umem: Arc<Umem<'a, T>>,
     cq: Box<xsk_ring_cons>,
 }
+// UmemCompletionQueue is not Send by default because of the *mut u32 in xsk_ring_cons. According to the Rustonomicon,
+// raw pointers are not Send/Sync as a 'lint'. I believe it is safe to mark MmapArea as Sync in this context.
+// https://doc.rust-lang.org/nomicon/send-and-sync.html
+unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for UmemCompletionQueue<'a, T> {}
 
 /// The fill queue is used to provide the AF_XDP socket (kernel) with buffers where it can write incoming packets.
 #[derive(Debug)]
@@ -37,6 +41,10 @@ pub struct UmemFillQueue<'a, T: std::default::Default + std::marker::Copy> {
     umem: Arc<Umem<'a, T>>,
     fq: Box<xsk_ring_prod>,
 }
+// UmemFillQueue is not Send by default because of the *mut u32 in xsk_ring_prod. According to the Rustonomicon,
+// raw pointers are not Send/Sync as a 'lint'. I believe it is safe to mark MmapArea as Sync in this context.
+// https://doc.rust-lang.org/nomicon/send-and-sync.html
+unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for UmemFillQueue<'a, T> {}
 
 #[derive(Debug, Error)]
 pub enum UmemNewError {

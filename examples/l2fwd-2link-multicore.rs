@@ -2,6 +2,7 @@
 // Example that forwards frames directly between two links using multiple cores and queues.
 //
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::io::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -18,6 +19,9 @@ use cli_table::{format::Justify, Table, WithTitle};
 use rlimit::{setrlimit, Resource, Rlim};
 use rtrb::{Consumer, PopError, Producer, RingBuffer};
 use serde::Deserialize;
+
+use libbpf_sys;
+use libc;
 
 use afxdp::buf_pool::BufPool;
 use afxdp::mmap_area::{MmapArea, MmapAreaOptions, MmapError};
@@ -108,19 +112,20 @@ impl StatState {
 enum Response {
     Stats(StatsMessage),
 }
+
 /// WorkerConfig defines the workers that will be start and their configuration
 struct WorkerConfig<'a> {
-    area: Arc<MmapArea<'a, BufCustom>>,
-
     core: usize,
-    zero_copy: bool,
-    copy_mode: bool,
 
-    link1_name: String,
-    link1_channel: usize,
+    link1_rx: SocketRx<'a, BufCustom>,
+    link1_tx: SocketTx<'a, BufCustom>,
+    link1_cq: UmemCompletionQueue<'a, BufCustom>,
+    link1_fq: UmemFillQueue<'a, BufCustom>,
 
-    link2_name: String,
-    link2_channel: usize,
+    link2_rx: SocketRx<'a, BufCustom>,
+    link2_tx: SocketTx<'a, BufCustom>,
+    link2_cq: UmemCompletionQueue<'a, BufCustom>,
+    link2_fq: UmemFillQueue<'a, BufCustom>,
 }
 
 struct WorkerQueues {
@@ -182,7 +187,7 @@ fn forward(
 
 /// The loop for each worker
 fn do_worker(
-    config: WorkerConfig,
+    mut config: WorkerConfig,
     mut queues: WorkerQueues,
     bp: Arc<Mutex<BufPoolVec<BufMmap<BufCustom>, BufCustom>>>,
 ) {
@@ -190,55 +195,9 @@ fn do_worker(
     let core = core_affinity::CoreId { id: config.core };
     core_affinity::set_for_current(core);
 
-    // Setup AF_XDP
-    let r = Umem::new(config.area.clone(), RING_SIZE, RING_SIZE);
-    let (umem1, umem1cq, mut umem1fq) = match r {
-        Ok(umem) => umem,
-        Err(err) => panic!("Failed to create Umem: {:?}", err),
-    };
-
-    let r = Umem::new(config.area.clone(), RING_SIZE, RING_SIZE);
-    let (umem2, umem2cq, mut umem2fq) = match r {
-        Ok(umem) => umem,
-        Err(err) => panic!("Failed to create Umem: {:?}", err),
-    };
-
-    let mut options = SocketOptions::default();
-    options.zero_copy_mode = config.zero_copy;
-    options.copy_mode = config.copy_mode;
-
-    let r = Socket::new(
-        umem1.clone(),
-        &config.link1_name,
-        config.link1_channel,
-        RING_SIZE,
-        RING_SIZE,
-        options,
-    );
-    let (_skt1, skt1rx, skt1tx) = match r {
-        Ok(skt) => skt,
-        Err(err) => panic!(
-            "Failed to create socket for {}:{} - {:?}",
-            &config.link1_name, config.link1_channel, err
-        ),
-    };
-
-    let r = Socket::new(
-        umem2.clone(),
-        &config.link2_name,
-        config.link2_channel,
-        RING_SIZE,
-        RING_SIZE,
-        options,
-    );
-    let (_skt2, skt2rx, skt2tx) = match r {
-        Ok(skt) => skt,
-        Err(err) => panic!(
-            "Failed to create socket for {}:{} - {:?}",
-            &config.link2_name, config.link2_channel, err
-        ),
-    };
-
+    //
+    // Provide the umem with buffers to write rx packets to (fill operation)
+    //
     let initial_fill_num: usize = RING_SIZE as usize;
 
     // Create local buf pool (just a vec) and get bufs from the global shared buf pool
@@ -255,10 +214,10 @@ fn do_worker(
     }
 
     //
-    // umem1
+    // Fill umem1
     //
     println!("Filling umem1 with {} buffers", initial_fill_num);
-    let r = umem1fq.fill(&mut bufs, initial_fill_num);
+    let r = config.link1_fq.fill(&mut bufs, initial_fill_num);
     match r {
         Ok(n) => {
             if n != initial_fill_num {
@@ -272,10 +231,10 @@ fn do_worker(
     }
 
     //
-    // umem2
+    // Fill umem2
     //
     println!("Filling umem2 with {} buffers", initial_fill_num);
-    let r = umem2fq.fill(&mut bufs, initial_fill_num);
+    let r = config.link2_fq.fill(&mut bufs, initial_fill_num);
     match r {
         Ok(n) => {
             if n != initial_fill_num {
@@ -296,17 +255,17 @@ fn do_worker(
 
     let mut state: [State; 2] = [
         State {
-            cq: umem1cq,
-            fq: umem1fq,
-            rx: skt1rx,
-            tx: skt1tx,
+            cq: config.link1_cq,
+            fq: config.link1_fq,
+            rx: config.link1_rx,
+            tx: config.link1_tx,
             fq_deficit: 0,
         },
         State {
-            cq: umem2cq,
-            fq: umem2fq,
-            rx: skt2rx,
-            tx: skt2tx,
+            cq: config.link2_cq,
+            fq: config.link2_fq,
+            rx: config.link2_rx,
+            tx: config.link2_tx,
             fq_deficit: 0,
         },
     ];
@@ -599,16 +558,74 @@ fn main() {
 
     // Build the worker configs from the information loaded from the YAML file.
     let mut workers = Vec::new();
+    let mut link_names = Vec::new(); // Vec to collect link names
     for w in yaml_workers {
+        //
+        // Create the AF_XDP umem and sockets for each worker
+        //
+        let r = Umem::new(area.clone(), RING_SIZE, RING_SIZE);
+        let (umem1, umem1cq, umem1fq) = match r {
+            Ok(umem) => umem,
+            Err(err) => panic!("Failed to create Umem: {:?}", err),
+        };
+
+        let r = Umem::new(area.clone(), RING_SIZE, RING_SIZE);
+        let (umem2, umem2cq, umem2fq) = match r {
+            Ok(umem) => umem,
+            Err(err) => panic!("Failed to create Umem: {:?}", err),
+        };
+
+        let mut options = SocketOptions::default();
+        options.zero_copy_mode = opt.zero_copy;
+        options.copy_mode = opt.copy;
+
+        let r = Socket::new(
+            umem1.clone(),
+            &w.link1_name,
+            w.link1_channel,
+            RING_SIZE,
+            RING_SIZE,
+            options,
+        );
+        let (_skt1, skt1rx, skt1tx) = match r {
+            Ok(skt) => skt,
+            Err(err) => panic!(
+                "Failed to create socket for {}:{} - {:?}",
+                &w.link1_name, w.link1_channel, err
+            ),
+        };
+
+        let r = Socket::new(
+            umem2.clone(),
+            &w.link2_name,
+            w.link2_channel,
+            RING_SIZE,
+            RING_SIZE,
+            options,
+        );
+        let (_skt2, skt2rx, skt2tx) = match r {
+            Ok(skt) => skt,
+            Err(err) => panic!(
+                "Failed to create socket for {}:{} - {:?}",
+                &w.link2_name, w.link2_channel, err
+            ),
+        };
+
+        link_names.push(w.link1_name);
+        link_names.push(w.link2_name);
+
         let worker = WorkerConfig {
-            area: area.clone(),
             core: w.core,
-            zero_copy: opt.zero_copy,
-            copy_mode: opt.copy,
-            link1_name: w.link1_name,
-            link1_channel: w.link1_channel,
-            link2_name: w.link2_name,
-            link2_channel: w.link2_channel,
+
+            link1_rx: skt1rx,
+            link1_tx: skt1tx,
+            link1_cq: umem1cq,
+            link1_fq: umem1fq,
+
+            link2_rx: skt2rx,
+            link2_tx: skt2tx,
+            link2_cq: umem2cq,
+            link2_fq: umem2fq,
         };
 
         workers.push(worker);
@@ -677,6 +694,27 @@ fn main() {
         match r {
             Ok(_) => {}
             Err(err) => println!("error: {:?}", err),
+        }
+    }
+
+    //
+    // Remove the XDP program from the links
+    // Note this is required because `libbpf` automatically sets a XDP program for AF_XDP (XSK) sockets but
+    // doesn't automatically remove it.
+    //
+    link_names.sort();
+    link_names.dedup();
+
+    for link_name in link_names {
+        let link_name_c = CString::new(link_name).unwrap();
+        let link_index: libc::c_uint;
+        unsafe {
+            link_index = libc::if_nametoindex(link_name_c.as_ptr());
+        }
+        if link_index > 0 {
+            unsafe {
+                libbpf_sys::bpf_set_link_xdp_fd(link_index as i32, -1, 0);
+            }
         }
     }
 }

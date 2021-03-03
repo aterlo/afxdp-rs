@@ -293,4 +293,6 @@ fn main() {
 
         pos = (pos + 1) % 2;
     }
+
+    // Note this simple program doesn't have a clean shutdown to remove the XDP programs.
 }

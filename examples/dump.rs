@@ -214,4 +214,6 @@ fn main() {
             }
         }
     }
+
+    // Note this simple example doesn't have a clean shutdown to remove the XDP programs.
 }

@@ -2,6 +2,7 @@
 // Example receives frames and drops them while printing the packet rate.
 //
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::io::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -97,14 +98,10 @@ enum Response {
 }
 /// WorkerConfig defines the workers that will be start and their configuration
 struct WorkerConfig<'a> {
-    area: Arc<MmapArea<'a, BufCustom>>,
-
     core: usize,
-    zero_copy: bool,
-    copy_mode: bool,
 
-    link_name: String,
-    link_channel: usize,
+    link_rx: SocketRx<'a, BufCustom>,
+    link_fq: UmemFillQueue<'a, BufCustom>,
 }
 
 struct WorkerQueues {
@@ -150,37 +147,13 @@ struct Opt {
 
 /// The loop for each worker
 fn do_worker(
-    config: WorkerConfig,
+    mut config: WorkerConfig,
     mut queues: WorkerQueues,
     bp: Arc<Mutex<BufPoolVec<BufMmap<BufCustom>, BufCustom>>>,
 ) {
     // Pin this thread to the requested core
     let core = core_affinity::CoreId { id: config.core };
     core_affinity::set_for_current(core);
-
-    // Setup AF_XDP
-    let r = Umem::new(config.area.clone(), RING_SIZE, RING_SIZE);
-    let (umem1, _, mut umem1fq) = match r {
-        Ok(umem) => umem,
-        Err(err) => panic!("Failed to create Umem: {:?}", err),
-    };
-
-    let mut options = SocketOptions::default();
-    options.zero_copy_mode = config.zero_copy;
-    options.copy_mode = config.copy_mode;
-
-    let r = Socket::new(
-        umem1.clone(),
-        &config.link_name,
-        config.link_channel,
-        RING_SIZE,
-        RING_SIZE,
-        options,
-    );
-    let (_skt1, skt1rx, _) = match r {
-        Ok(skt) => skt,
-        Err(err) => panic!("Failed to create socket: {:?}", err),
-    };
 
     let initial_fill_num: usize = RING_SIZE as usize;
 
@@ -201,7 +174,7 @@ fn do_worker(
     // umem1
     //
     println!("Filling umem1 with {} buffers", initial_fill_num);
-    let r = umem1fq.fill(&mut bufs, initial_fill_num);
+    let r = config.link_fq.fill(&mut bufs, initial_fill_num);
     match r {
         Ok(n) => {
             if n != initial_fill_num {
@@ -220,8 +193,8 @@ fn do_worker(
     let mut pending: ArrayDeque<[BufMmap<BufCustom>; PENDING_LEN], Wrapping> = ArrayDeque::new();
 
     let mut state = State {
-        fq: umem1fq,
-        rx: skt1rx,
+        fq: config.link_fq,
+        rx: config.link_rx,
         fq_deficit: 0,
     };
 
@@ -482,14 +455,41 @@ fn main() {
 
     // Build the worker configs from the information loaded from the YAML file.
     let mut workers = Vec::new();
+    let mut link_names = Vec::new(); // Vec to collect link names
     for w in yaml_workers {
+        //
+        // Setup AF_XDP
+        //
+        let r = Umem::new(area.clone(), RING_SIZE, RING_SIZE);
+        let (umem1, _, umem1fq) = match r {
+            Ok(umem) => umem,
+            Err(err) => panic!("Failed to create Umem: {:?}", err),
+        };
+
+        let mut options = SocketOptions::default();
+        options.zero_copy_mode = opt.zero_copy;
+        options.copy_mode = opt.copy;
+
+        let r = Socket::new(
+            umem1.clone(),
+            &w.link_name,
+            w.link_channel,
+            RING_SIZE,
+            RING_SIZE,
+            options,
+        );
+        let (_skt1, skt1rx, _) = match r {
+            Ok(skt) => skt,
+            Err(err) => panic!("Failed to create socket: {:?}", err),
+        };
+
+        link_names.push(w.link_name);
+
         let worker = WorkerConfig {
-            area: area.clone(),
             core: w.core,
-            zero_copy: opt.zero_copy,
-            copy_mode: opt.copy,
-            link_name: w.link_name,
-            link_channel: w.link_channel,
+
+            link_rx: skt1rx,
+            link_fq: umem1fq,
         };
 
         workers.push(worker);
@@ -558,6 +558,27 @@ fn main() {
         match r {
             Ok(_) => {}
             Err(err) => println!("error: {:?}", err),
+        }
+    }
+
+    //
+    // Remove the XDP program from the links
+    // Note this is required because `libbpf` automatically sets a XDP program for AF_XDP (XSK) sockets but
+    // doesn't automatically remove it.
+    //
+    link_names.sort();
+    link_names.dedup();
+
+    for link_name in link_names {
+        let link_name_c = CString::new(link_name).unwrap();
+        let link_index: libc::c_uint;
+        unsafe {
+            link_index = libc::if_nametoindex(link_name_c.as_ptr());
+        }
+        if link_index > 0 {
+            unsafe {
+                libbpf_sys::bpf_set_link_xdp_fd(link_index as i32, -1, 0);
+            }
         }
     }
 }
