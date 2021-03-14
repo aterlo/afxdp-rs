@@ -60,6 +60,7 @@ Small amounts of packet loss starts at about 6.5M PPS unidirectional and 6.0M PP
 Little effort has been put into optimizing this so I expect there are some easy performance wins.
 
 ## Supported Features
+
 * HUGE TLB flag to mmap area: Optional (command line arg in the sample programs)
 
 ## Required AF_XDP Features
@@ -84,3 +85,4 @@ Little effort has been put into optimizing this so I expect there are some easy 
 * Currently this module is not 'safe' because Bufs can outlive the memory pool they are associated with. I believe fixing this will require adding an Arc to each Buf. I have not had the time yet to determine the performance impact of this and would appreciate any other ideas.
 * All interactions with the Tx, Rx, fill and completion queues are done with C functions that wrap the inline functions in libbpf. I believe this means that these hot functions cannot be inlined in Rust. In the medium term we should build pure Rust functions so they can be inlined.
 * A more idiomatic Rust interface could be built by talking directly to the kernel vs. wrapping libbpf functions.
+* Investigate if it makes sense to have a non-busy loop interface. This could be useful for tcpdump like applications where it is not ideal to dedicate a core/thread.
