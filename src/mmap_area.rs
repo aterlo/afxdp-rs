@@ -34,7 +34,7 @@ pub enum MmapError {
 }
 
 /// Configuration options for MmapArea
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct MmapAreaOptions {
     /// If set to true, the mmap call is passed MAP_HUGETLB
     pub huge_tlb: bool,
@@ -89,11 +89,12 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
         for i in 0..buf_num {
             let buf: BufMmap<T>;
             unsafe {
-                let addr = i as u64 * buf_len as u64;
+                // addr is the offset into the memory mapped area
+                let addr = (i * buf_len) as u64 + AF_XDP_RESERVED as u64;
                 let ptr = ma.ptr.offset(addr as isize);
 
                 buf = BufMmap::<T> {
-                    addr: addr + AF_XDP_RESERVED,
+                    addr: addr,
                     len: 0,
                     data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len_available),
                     user: Default::default(),

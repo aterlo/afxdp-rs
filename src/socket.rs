@@ -352,6 +352,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
     }
 
     /// Attempt to receive up to `batch_size` buffers from the socket.
+    ///
     #[inline]
     pub fn try_recv(
         &mut self,
@@ -361,6 +362,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
     ) -> Result<usize, SocketError> {
         let mut idx_rx: u32 = 0;
         let rcvd: usize;
+
         batch_size = min(bufs.capacity() - bufs.len(), batch_size);
 
         unsafe {
@@ -379,7 +381,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
 
             unsafe {
                 desc = _xsk_ring_cons__rx_desc(self.rx.as_mut(), idx_rx);
-                let addr = (*desc).addr.try_into().unwrap();
+                let addr = (*desc).addr;
                 let len = (*desc).len.try_into().unwrap();
                 let ptr = self.socket.umem.area.get_ptr().offset(addr as isize);
 
@@ -431,15 +433,17 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketTx<'a, T> {
 
         batch_size = min(bufs.len(), batch_size);
 
+        if batch_size == 0 {
+            return Ok(0);
+        }
+
         unsafe {
             ready =
                 _xsk_ring_prod__reserve(self.tx.as_mut(), batch_size as u64, &mut idx_tx) as usize;
         }
 
         for _ in 0..ready {
-            let b: BufMmap<T>;
-
-            b = bufs.pop_front().unwrap();
+            let b = bufs.pop_front().unwrap();
 
             unsafe {
                 let desc = _xsk_ring_prod__tx_desc(self.tx.as_mut(), idx_tx);

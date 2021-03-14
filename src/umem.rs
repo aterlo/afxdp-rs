@@ -177,13 +177,16 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemCompletionQueue<'a, T
         for _ in 0..ready {
             let buf: BufMmap<T>;
 
+            // Note that we don't add AF_XDP_RESERVED here since the addr that comes back is already
+            // +256 (AF_XDP_RESERVED) into the buffer.
             unsafe {
-                let addr = _xsk_ring_cons__comp_addr(self.cq.as_mut(), idx);
-                let ptr = self.umem.area.get_ptr().offset(*addr as isize);
+                let raw_addr = _xsk_ring_cons__comp_addr(self.cq.as_mut(), idx);
+                let addr = *raw_addr;
+                let ptr = self.umem.area.get_ptr().offset(addr as isize);
                 idx += 1;
 
                 buf = BufMmap {
-                    addr: *addr + AF_XDP_RESERVED,
+                    addr,
                     len: 0,
                     data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len_available),
                     user: Default::default(),
@@ -219,29 +222,34 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemFillQueue<'a, T> {
 
         batch_size = min(bufs.len(), batch_size);
 
+        if batch_size == 0 {
+            return Ok(0);
+        }
+
         unsafe {
             ready = _xsk_ring_prod__reserve(self.fq.as_mut(), batch_size as u64, &mut idx) as usize;
         }
 
-        if ready > 0 {
-            for _ in 0..ready {
-                let b = bufs.pop();
-                match b {
-                    Some(b) => unsafe {
-                        let ptr = _xsk_ring_prod__fill_addr(self.fq.as_mut(), idx);
-                        idx += 1;
+        for _ in 0..ready {
+            let b = bufs.pop();
 
-                        *ptr = (b.addr as u64).into();
-                    },
-                    None => {
-                        todo!("tried to get buffer from empty pool");
-                    }
+            match b {
+                Some(b) => unsafe {
+                    let ptr = _xsk_ring_prod__fill_addr(self.fq.as_mut(), idx);
+                    idx += 1;
+
+                    *ptr = (b.addr as u64).into();
+                },
+                None => {
+                    todo!("tried to get buffer from empty pool");
                 }
             }
         }
 
-        unsafe {
-            _xsk_ring_prod__submit(self.fq.as_mut(), ready as u64);
+        if ready > 0 {
+            unsafe {
+                _xsk_ring_prod__submit(self.fq.as_mut(), ready as u64);
+            }
         }
 
         Ok(ready)
