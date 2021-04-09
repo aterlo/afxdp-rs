@@ -57,12 +57,12 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
         let mut flags: c_int = MAP_PRIVATE | MAP_ANONYMOUS;
 
         if options.huge_tlb {
-            flags = flags | MAP_HUGETLB
+            flags |= MAP_HUGETLB
         }
 
         unsafe {
             ptr = mmap(
-                0 as *mut c_void,
+                std::ptr::null_mut::<c_void>(),
                 buf_num * buf_len,
                 PROT_READ | PROT_WRITE,
                 flags,
@@ -94,7 +94,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> MmapArea<'a, T> {
                 let ptr = ma.ptr.offset(addr as isize);
 
                 buf = BufMmap::<T> {
-                    addr: addr,
+                    addr,
                     len: 0,
                     data: std::slice::from_raw_parts_mut(ptr as *mut u8, buf_len_available),
                     user: Default::default(),

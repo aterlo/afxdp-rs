@@ -238,7 +238,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> UmemFillQueue<'a, T> {
                     let ptr = _xsk_ring_prod__fill_addr(self.fq.as_mut(), idx);
                     idx += 1;
 
-                    *ptr = (b.addr as u64).into();
+                    *ptr = b.addr as u64;
                 },
                 None => {
                     todo!("tried to get buffer from empty pool");

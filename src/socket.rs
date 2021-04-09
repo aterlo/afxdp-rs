@@ -115,11 +115,11 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         };
 
         if options.zero_copy_mode {
-            cfg.bind_flags = cfg.bind_flags | XDP_ZEROCOPY as u16;
+            cfg.bind_flags |= XDP_ZEROCOPY as u16;
         }
 
         if options.copy_mode {
-            cfg.bind_flags = cfg.bind_flags | XDP_COPY as u16;
+            cfg.bind_flags |= XDP_COPY as u16;
         }
 
         // Heap allocate since they are passed to the C function
@@ -194,11 +194,11 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         };
 
         if options.zero_copy_mode {
-            cfg.bind_flags = cfg.bind_flags | XDP_ZEROCOPY as u16;
+            cfg.bind_flags |= XDP_ZEROCOPY as u16;
         }
 
         if options.copy_mode {
-            cfg.bind_flags = cfg.bind_flags | XDP_COPY as u16;
+            cfg.bind_flags |= XDP_COPY as u16;
         }
 
         // Heap allocate since they are passed to the C function
@@ -267,11 +267,11 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         };
 
         if options.zero_copy_mode {
-            cfg.bind_flags = cfg.bind_flags | XDP_ZEROCOPY as u16;
+            cfg.bind_flags |= XDP_ZEROCOPY as u16;
         }
 
         if options.copy_mode {
-            cfg.bind_flags = cfg.bind_flags | XDP_COPY as u16;
+            cfg.bind_flags |= XDP_COPY as u16;
         }
 
         // Heap allocate since they are passed to the C function
@@ -394,13 +394,10 @@ impl<'a, T: std::default::Default + std::marker::Copy> SocketRx<'a, T> {
             }
 
             let r = bufs.push_back(b);
-            match r {
-                Some(_) => {
-                    // Since we set batch_size above based on how much space there is, this should
-                    // never happen.
-                    panic!("there should be space");
-                }
-                None => {}
+            if r.is_some() {
+                // Since we set batch_size above based on how much space there is, this should
+                // never happen.
+                panic!("there should be space");
             }
 
             idx_rx += 1;
