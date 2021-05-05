@@ -34,32 +34,18 @@ where
 {
     fn get(&mut self, bufs: &mut Vec<T>, num: usize) -> usize {
         let ready = min(num, self.bufs.len());
+        let start = self.bufs.len() - ready;
 
-        for _ in 0..ready {
-            let r = self.bufs.pop();
-            match r {
-                Some(buf) => {
-                    bufs.push(buf);
-                }
-                None => panic!("This should not happen"),
-            }
-        }
+        bufs.extend(self.bufs.drain(start..));
 
         ready
     }
 
     fn put(&mut self, bufs: &mut Vec<T>, num: usize) -> usize {
         let ready = min(num, bufs.len());
+        let start = bufs.len() - ready;
 
-        for _ in 0..ready {
-            let r = bufs.pop();
-            match r {
-                Some(buf) => {
-                    self.bufs.push(buf);
-                }
-                None => panic!("This should not happen"),
-            }
-        }
+        self.bufs.extend(bufs.drain(start..));
 
         ready
     }
@@ -76,5 +62,38 @@ where
 
     fn is_empty(&self) -> bool {
         self.bufs.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[derive(Default, Copy, Clone, Debug)]
+    struct BufCustom {}
+
+    #[test]
+    fn buf_pool_vec_put1() {
+        use crate::buf_pool::BufPool;
+        use crate::buf_pool_vec::BufPoolVec;
+        use crate::buf_vec::BufVec;
+
+        const NUM: usize = 97;
+
+        let mut bufs = Vec::with_capacity(97);
+        for _ in 0..NUM {
+            let buf: BufVec<BufCustom> = BufVec::new(NUM, BufCustom {});
+            bufs.push(buf);
+        }
+
+        let mut bufpool = BufPoolVec::new(bufs.len());
+
+        let len = bufs.len();
+        let r = bufpool.put(&mut bufs, len);
+        assert!(r == NUM);
+        assert!(bufpool.len() == NUM);
+
+        let r = bufpool.get(&mut bufs, NUM);
+        assert!(r == NUM);
+        assert!(bufpool.len() == 0);
+        assert!(bufs.len() == NUM);
     }
 }
