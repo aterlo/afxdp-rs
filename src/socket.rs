@@ -146,8 +146,9 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         }
 
         if ret != 0 {
+            let errno = errno().0;
             return Err(SocketNewError::Create(std::io::Error::from_raw_os_error(
-                ret,
+                errno,
             )));
         }
 
@@ -224,8 +225,9 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         }
 
         if ret != 0 {
+            let errno = errno().0;
             return Err(SocketNewError::Create(std::io::Error::from_raw_os_error(
-                ret,
+                errno,
             )));
         }
 
@@ -297,8 +299,9 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
         }
 
         if ret != 0 {
+            let errno = errno().0;
             return Err(SocketNewError::Create(std::io::Error::from_raw_os_error(
-                ret,
+                errno,
             )));
         }
 

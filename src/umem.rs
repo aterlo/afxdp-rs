@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::{cmp::min, u64};
 
+use errno::errno;
 use thiserror::Error;
 
 use libbpf_sys::{
@@ -118,7 +119,10 @@ impl<'a, T: std::default::Default + std::marker::Copy> Umem<'a, T> {
         }
 
         if ret != 0 {
-            return Err(UmemNewError::Create(std::io::Error::from_raw_os_error(ret)));
+            let errno = errno().0;
+            return Err(UmemNewError::Create(std::io::Error::from_raw_os_error(
+                errno,
+            )));
         }
 
         let arc = Arc::new(Umem {
@@ -370,7 +374,7 @@ mod tests {
     }
 
     // Test with both ring sizes as a power of two
-    // Note that Umem and AF_XDP in general required the locked memory to be increased to work
+    // Note that Umem and AF_XDP in general require the locked memory to be increased to work
     #[test]
     fn ring_size4() {
         use rlimit::{setrlimit, Resource, Rlim};
