@@ -12,11 +12,6 @@
 // ip link set veth2 up
 // ip link set veth1 promisc on
 // ip link set veth2 promisc on
-
-// Note with veth on 5.10, it seems that any burst size greater then 16 results in the test failing
-// because not all the packets are received. I think this is a bug in the needs_wakeup implementation
-// of veth because if I call wake() in every loop iteration (vs. just when the needs_wakeup flag is set)
-// the test passes. I plan to revisit that after I can test with 5.11.
 //
 // TODO: This test fails when the sockets drop packets (as seen in rx_dropped XSK socket stats). To
 // fix this we need take those drops into account before calling this a pass/fail. How often this happens is
@@ -74,7 +69,7 @@ struct BiDirHash {
     end_time: time::Instant,
     done_time_with_padding: time::Instant,
 
-    packet_gap: time::Duration,
+    burst_gap: time::Duration,
     burst_size: usize,
     total_packets: usize,
 
@@ -87,7 +82,7 @@ impl BiDirHash {
     fn new(
         max_duration: time::Duration,
         total_packets: usize,
-        packet_gap: time::Duration,
+        burst_gap: time::Duration,
         burst_size: usize,
     ) -> BiDirHash {
         let end_time = time::Instant::now().add(max_duration);
@@ -120,7 +115,7 @@ impl BiDirHash {
         BiDirHash {
             end_time,
             done_time_with_padding,
-            packet_gap,
+            burst_gap,
             burst_size,
             total_packets,
             port_state: [port1, port2],
@@ -185,7 +180,7 @@ impl TrafficTest for BiDirHash {
     ) -> usize {
         let port = &mut self.port_state[port];
 
-        if port.transmitted < self.total_packets && port.last_time.add(self.packet_gap).lt(&now) {
+        if port.transmitted < self.total_packets && port.last_time.add(self.burst_gap).lt(&now) {
             // The most packets we can send is the space in the output buffer and the number of available
             // buffers in bufs.
             let mut packet_count = min(pending.capacity() - pending.len(), bufs.len());
@@ -332,88 +327,74 @@ impl TrafficTest for BiDirHash {
     }
 
     fn finalize(&self) {
-        let mut failed: bool = false;
-
         error_check(
             "transmitted1",
-            &mut failed,
             self.total_packets,
             self.port_state[0].transmitted,
-        );
+        )
+        .unwrap();
 
         error_check(
             "transmitted2",
-            &mut failed,
             self.total_packets,
             self.port_state[1].transmitted,
-        );
+        )
+        .unwrap();
 
         error_check(
             "transmit-receive1",
-            &mut failed,
             self.port_state[0].transmitted,
             self.port_state[1].received,
-        );
+        )
+        .unwrap();
 
         error_check(
             "transmit-receive2",
-            &mut failed,
             self.port_state[1].transmitted,
             self.port_state[0].received,
-        );
+        )
+        .unwrap();
 
-        error_check("bad_hash1", &mut failed, self.port_state[0].bad_hash, 0);
+        error_check("bad_hash1", self.port_state[0].bad_hash, 0).unwrap();
 
-        error_check("bad_hash2", &mut failed, self.port_state[1].bad_hash, 0);
+        error_check("bad_hash2", self.port_state[1].bad_hash, 0).unwrap();
 
-        error_check(
-            "out_of_order1",
-            &mut failed,
-            self.port_state[0].out_of_order,
-            0,
-        );
+        error_check("out_of_order1", self.port_state[0].out_of_order, 0).unwrap();
 
-        error_check(
-            "out_of_order2",
-            &mut failed,
-            self.port_state[1].out_of_order,
-            0,
-        );
+        error_check("out_of_order2", self.port_state[1].out_of_order, 0).unwrap();
 
-        error_check("duplicated1", &mut failed, self.port_state[0].duplicated, 0);
+        error_check("duplicated1", self.port_state[0].duplicated, 0).unwrap();
 
-        error_check("duplicated2", &mut failed, self.port_state[1].duplicated, 0);
-
-        if failed {
-            println!("{}", self);
-            panic!("failed");
-        }
+        error_check("duplicated2", self.port_state[1].duplicated, 0).unwrap();
     }
 }
 
-fn error_check(name: &str, failed: &mut bool, val1: usize, val2: usize) {
+fn error_check(name: &str, val1: usize, val2: usize) -> Result<(), String> {
     if val1 != val2 {
-        *failed = true;
-
-        println!("{} -- {} {} -- {}", name, val1, val2, val1 - val2,);
+        let s = format!("{} -- {} {} -- {}", name, val1, val2, val1 - val2);
+        return Err(s);
     }
+
+    Ok(())
 }
 
 #[test]
 fn bi_dir_hash1() {
-    let test = BiDirHash::new(
-        time::Duration::from_secs(30),
-        16 * (2 << 17),
-        time::Duration::from_micros(100),
-        16,
-    );
-
+    // If the transmit side is too fast, there are XSK socket Rx drops. This config works in debug mode on my laptop.
     // let test = BiDirHash::new(
     //     time::Duration::from_secs(60),
-    //     8000199,
-    //     time::Duration::from_micros(100),
-    //     16,
+    //     100000,
+    //     time::Duration::from_micros(500),
+    //     4,
     // );
+
+    // This config sends much faster and works in release mode on my laptop.
+    let test = BiDirHash::new(
+        time::Duration::from_secs(60),
+        500000,
+        time::Duration::from_micros(50),
+        8,
+    );
 
     run(test);
 }
