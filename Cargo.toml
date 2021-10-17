@@ -12,7 +12,7 @@ categories = ["network-programming"]
 readme = "README.md"
 
 [dependencies]
-libbpf-sys = "0.3.0-1"
+libbpf-sys = "0.5.0-1"
 libc = "0.2"
 errno = "0.2"
 arraydeque = "0.4"
@@ -23,7 +23,7 @@ criterion = "0.3"
 structopt = "0.3"
 rlimit = "0.5"
 crossbeam-channel = "0.5"
-pnet = "0.27"
+pnet = "0.28"
 core_affinity = "0.5"
 rtrb = "0.1"
 ctrlc = "3.1"
