@@ -112,6 +112,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
             xdp_flags: XDP_FLAGS_UPDATE_IF_NOEXIST,
             bind_flags: XDP_USE_NEED_WAKEUP as u16,
             libbpf_flags: 0,
+            __bindgen_padding_0: Default::default(),
         };
 
         if options.zero_copy_mode {
@@ -192,6 +193,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
             xdp_flags: XDP_FLAGS_UPDATE_IF_NOEXIST,
             bind_flags: XDP_USE_NEED_WAKEUP as u16,
             libbpf_flags: 0,
+            __bindgen_padding_0: Default::default(),
         };
 
         if options.zero_copy_mode {
@@ -266,6 +268,7 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
             xdp_flags: XDP_FLAGS_UPDATE_IF_NOEXIST,
             bind_flags: XDP_USE_NEED_WAKEUP as u16,
             libbpf_flags: 0,
+            __bindgen_padding_0: Default::default(),
         };
 
         if options.zero_copy_mode {

@@ -1,18 +1,18 @@
 [package]
 name = "afxdp"
-description = "AF XDP for Rust"
+description = "AF_XDP for Rust"
 repository = "https://github.com/aterlo/afxdp-rs"
 homepage = "https://github.com/aterlo/afxdp-rs"
 version = "0.4.0"
 authors = ["Dan Siemon <dan@aterlo.com>"]
 edition = "2018"
 license = "Apache-2.0"
-keywords = ["AF_XDP", "XDP"]
+keywords = ["AF_XDP", "AF XDP", "XDP", "XSK"]
 categories = ["network-programming"]
 readme = "README.md"
 
 [dependencies]
-libbpf-sys = "0.5.0-1"
+libbpf-sys = "0.5.0-2"
 libc = "0.2"
 errno = "0.2"
 arraydeque = "0.4"
