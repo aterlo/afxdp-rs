@@ -6,7 +6,7 @@
 //     ethtool -X
 //
 use arraydeque::{ArrayDeque, Wrapping};
-use rlimit::{setrlimit, Resource, Rlim};
+use rlimit::{setrlimit, Resource};
 use std::cmp::min;
 use structopt::StructOpt;
 
@@ -100,7 +100,7 @@ fn main() {
 
     let initial_fill_num = min(opt.bufnum / 2, RING_SIZE as usize);
 
-    assert!(setrlimit(Resource::MEMLOCK, Rlim::INFINITY, Rlim::INFINITY).is_ok());
+    assert!(setrlimit(Resource::MEMLOCK, rlimit::INFINITY, rlimit::INFINITY).is_ok());
 
     let options: MmapAreaOptions;
     if opt.huge_tlb {

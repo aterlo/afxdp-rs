@@ -5,14 +5,14 @@ repository = "https://github.com/aterlo/afxdp-rs"
 homepage = "https://github.com/aterlo/afxdp-rs"
 version = "0.4.0"
 authors = ["Dan Siemon <dan@aterlo.com>"]
-edition = "2018"
+edition = "2021"
 license = "Apache-2.0"
 keywords = ["AF_XDP", "AF XDP", "XDP", "XSK"]
 categories = ["network-programming"]
 readme = "README.md"
 
 [dependencies]
-libbpf-sys = "0.5.0-2"
+libbpf-sys = "0.7.0+v0.7.0"
 libc = "0.2"
 errno = "0.2"
 arraydeque = "0.4"
@@ -21,11 +21,11 @@ thiserror = "1.0"
 [dev-dependencies]
 criterion = "0.3"
 structopt = "0.3"
-rlimit = "0.5"
+rlimit = "0.8"
 crossbeam-channel = "0.5"
-pnet = "0.28"
+pnet = "0.29"
 core_affinity = "0.5"
-rtrb = "0.1"
+rtrb = "0.2"
 ctrlc = "3.1"
 cli-table = "0.4"
 serde = { version = "1.0", features = ["derive"] }

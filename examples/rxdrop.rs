@@ -16,7 +16,7 @@ use structopt::StructOpt;
 
 use arraydeque::{ArrayDeque, Wrapping};
 use cli_table::{format::Justify, Table, WithTitle};
-use rlimit::{setrlimit, Resource, Rlim};
+use rlimit::{setrlimit, Resource};
 use rtrb::{Consumer, PopError, Producer, RingBuffer};
 use serde::Deserialize;
 
@@ -385,7 +385,7 @@ fn main() {
     .expect("Error setting Ctrl-C handler");
     println!("CTRL-C to exit");
 
-    assert!(setrlimit(Resource::MEMLOCK, Rlim::INFINITY, Rlim::INFINITY).is_ok());
+    assert!(setrlimit(Resource::MEMLOCK, rlimit::INFINITY, rlimit::INFINITY).is_ok());
 
     //
     // Read the config file
@@ -502,8 +502,8 @@ fn main() {
     let mut worker_queues: Vec<WorkerQueues> = Vec::with_capacity(workers.len());
 
     for _ in 0..workers.len() {
-        let (command_producer, command_consumer) = RingBuffer::new(2).split();
-        let (response_producer, response_consumer) = RingBuffer::new(2).split();
+        let (command_producer, command_consumer) = RingBuffer::new(2);
+        let (response_producer, response_consumer) = RingBuffer::new(2);
 
         let worker = WorkerQueues {
             command_consumer,

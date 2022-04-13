@@ -5,7 +5,7 @@
 // at a link to a single channel is with ethtool -X.
 //
 use arraydeque::{ArrayDeque, Wrapping};
-use rlimit::{setrlimit, Resource, Rlim};
+use rlimit::{setrlimit, Resource};
 use std::cmp::min;
 use structopt::StructOpt;
 
@@ -94,7 +94,7 @@ struct Opt {
 fn main() {
     let opt = Opt::from_args();
 
-    assert!(setrlimit(Resource::MEMLOCK, Rlim::INFINITY, Rlim::INFINITY).is_ok());
+    assert!(setrlimit(Resource::MEMLOCK, rlimit::INFINITY, rlimit::INFINITY).is_ok());
 
     let options: MmapAreaOptions;
     if opt.huge_tlb {
