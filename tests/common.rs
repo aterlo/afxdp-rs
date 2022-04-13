@@ -11,7 +11,7 @@ use std::time;
 use std::{fmt::Display, io};
 
 use arraydeque::{ArrayDeque, Wrapping};
-use rlimit::{setrlimit, Resource, Rlim};
+use rlimit::{setrlimit, Resource};
 
 use afxdp::buf_pool::BufPool;
 use afxdp::mmap_area::{MmapArea, MmapAreaOptions, MmapError};
@@ -316,7 +316,7 @@ pub fn run<T>(test: T)
 where
     T: 'static + TrafficTest + Send + Display,
 {
-    let r = setrlimit(Resource::MEMLOCK, Rlim::INFINITY, Rlim::INFINITY);
+    let r = setrlimit(Resource::MEMLOCK, rlimit::INFINITY, rlimit::INFINITY);
     match r {
         Err(_) => {
             writeln!(

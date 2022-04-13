@@ -377,11 +377,11 @@ mod tests {
     // Note that Umem and AF_XDP in general require the locked memory to be increased to work
     #[test]
     fn ring_size4() {
-        use rlimit::{setrlimit, Resource, Rlim};
+        use rlimit::{setrlimit, Resource};
         use std::io;
         use std::io::Write;
 
-        let r = setrlimit(Resource::MEMLOCK, Rlim::INFINITY, Rlim::INFINITY);
+        let r = setrlimit(Resource::MEMLOCK, rlimit::INFINITY, rlimit::INFINITY);
         match r {
             Err(_) => {
                 writeln!(

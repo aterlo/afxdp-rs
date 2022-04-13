@@ -96,7 +96,7 @@ fn main() {
 
     assert!(setrlimit(Resource::MEMLOCK, rlimit::INFINITY, rlimit::INFINITY).is_ok());
 
-    let options: MmapAreaOptions;
+    let options;
     if opt.huge_tlb {
         options = MmapAreaOptions { huge_tlb: true };
     } else {

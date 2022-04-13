@@ -539,11 +539,11 @@ mod tests {
     // Test the ring size constraints during socket creation
     #[test]
     fn ring_size1() {
-        use rlimit::{setrlimit, Resource, Rlim};
+        use rlimit::{setrlimit, Resource};
         use std::io;
         use std::io::Write;
 
-        let r = setrlimit(Resource::MEMLOCK, Rlim::INFINITY, Rlim::INFINITY);
+        let r = setrlimit(Resource::MEMLOCK, rlimit::INFINITY, rlimit::INFINITY);
         match r {
             Err(_) => {
                 writeln!(
