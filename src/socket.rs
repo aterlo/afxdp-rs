@@ -10,7 +10,7 @@ use libbpf_sys::{
     _xsk_ring_prod__needs_wakeup, _xsk_ring_prod__reserve, _xsk_ring_prod__submit,
     _xsk_ring_prod__tx_desc, xdp_desc, xsk_ring_cons, xsk_ring_prod, xsk_socket,
     xsk_socket__create, xsk_socket__delete, xsk_socket__fd, xsk_socket_config, xsk_umem, XDP_COPY,
-    XDP_FLAGS_UPDATE_IF_NOEXIST, XDP_USE_NEED_WAKEUP, XDP_ZEROCOPY,
+    XDP_FLAGS_UPDATE_IF_NOEXIST, XDP_USE_NEED_WAKEUP, XDP_ZEROCOPY, XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD,
 };
 use libc::{poll, pollfd, sendto, EAGAIN, EBUSY, ENETDOWN, ENOBUFS, MSG_DONTWAIT, POLLIN};
 use thiserror::Error;
@@ -34,7 +34,7 @@ pub struct Socket<'a, T: std::default::Default + std::marker::Copy> {
 #[derive(Debug)]
 pub struct SocketRx<'a, T: std::default::Default + std::marker::Copy> {
     socket: Arc<Socket<'a, T>>,
-    fd: std::os::raw::c_int,
+    pub fd: std::os::raw::c_int,
     rx: Box<xsk_ring_cons>,
 }
 // SocketRx is not Send by default because of the *mut u32 in xsk_ring_cons. According to the Rustonomicon,
@@ -46,7 +46,7 @@ unsafe impl<'a, T: std::default::Default + std::marker::Copy> Send for SocketRx<
 #[derive(Debug)]
 pub struct SocketTx<'a, T: std::default::Default + std::marker::Copy> {
     socket: Arc<Socket<'a, T>>,
-    fd: std::os::raw::c_int,
+    pub fd: std::os::raw::c_int,
     tx: Box<xsk_ring_prod>,
 }
 // SocketTx is not Send by default because of the *mut u32 in xsk_ring_prod. According to the Rustonomicon,
@@ -81,6 +81,9 @@ pub struct SocketOptions {
 
     /// Rx ring size (must be a power of two)
     pub rx_ring_size: u32,
+
+    /// Inhibit libbpf from loading its own XDP program
+    pub inhibit_prog_load: bool,
 }
 
 impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
@@ -121,6 +124,10 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
 
         if options.copy_mode {
             cfg.bind_flags |= XDP_COPY as u16;
+        }
+
+        if options.inhibit_prog_load {
+            cfg.libbpf_flags |= XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD as u32;
         }
 
         // Heap allocate since they are passed to the C function
@@ -204,6 +211,10 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
             cfg.bind_flags |= XDP_COPY as u16;
         }
 
+        if options.inhibit_prog_load {
+            cfg.libbpf_flags |= XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD as u32;
+        }
+
         // Heap allocate since they are passed to the C function
         let mut rx: Box<xsk_ring_cons> = Default::default();
 
@@ -277,6 +288,10 @@ impl<'a, T: std::default::Default + std::marker::Copy> Socket<'a, T> {
 
         if options.copy_mode {
             cfg.bind_flags |= XDP_COPY as u16;
+        }
+
+        if options.inhibit_prog_load {
+            cfg.libbpf_flags |= XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD as u32;
         }
 
         // Heap allocate since they are passed to the C function
